@@ -6,7 +6,7 @@ import time
 import tempfile
 import os
 
-# Configuración de seguridad desde Secrets
+# Configuración de seguridad
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
 st.set_page_config(page_title="ScopeAI", layout="wide")
@@ -16,20 +16,20 @@ if 'autenticado' not in st.session_state:
     st.session_state.autenticado = False
 
 if not st.session_state.autenticado:
-    st.title("Acceso a ScopeAI")
-    tab1, tab2 = st.tabs(["Iniciar Sesión", "Crear Cuenta"])
+    st.title("Acceso")
+    tab1, tab2 = st.tabs(["Entrar", "Nuevo Registro"])
     with tab1:
         usuario = st.text_input("Usuario")
         clave = st.text_input("Contraseña", type="password")
-        if st.button("Entrar"):
+        if st.button("Acceder"):
             st.session_state.autenticado = True
             st.rerun()
     with tab2:
-        st.info("Introduce tus datos para registrarte")
-        nuevo_usuario = st.text_input("Nuevo Usuario")
-        nueva_clave = st.text_input("Nueva Contraseña", type="password")
-        if st.button("Registrarme"):
-            st.success("Cuenta creada. Ya puedes iniciar sesión.")
+        st.text_input("Nombre")
+        st.text_input("Email")
+        st.text_input("Crear Contraseña", type="password")
+        if st.button("Crear Cuenta"):
+            st.success("Cuenta creada.")
     st.stop()
 
 # --- INTERFAZ PRINCIPAL ---
@@ -37,85 +37,79 @@ st.title("ScopeAI")
 
 with st.sidebar:
     st.header("Configuración")
-    excel_file = st.file_uploader("Subir inventario de precios (Excel)", type=['xlsx'])
+    excel_file = st.file_uploader("Subir Inventario (Excel)", type=['xlsx'])
     inventario_text = ""
     if excel_file:
         df = pd.read_excel(excel_file)
         inventario_text = df.to_string()
-        st.success("Inventario cargado")
+        st.success("Excel cargado")
 
-st.subheader("Datos de la avería")
-mides = st.text_area("Formulario de medidas y desperfectos (Opcional)")
+# CAMBIO SOLICITADO: Solo "Datos"
+st.subheader("Datos")
+mides = st.text_area("Información adicional (Opcional)", placeholder="Introduce aquí medidas, materiales o detalles...")
 
-archivo = st.file_uploader("Subir vídeo de la avería", type=['mp4', 'mov', 'avi'])
+archivo = st.file_uploader("Subir vídeo", type=['mp4', 'mov', 'avi'])
 
 if archivo is not None:
     st.video(archivo)
     
-    if st.button("Generar Factura y Presupuesto"):
-        with st.spinner("Procesando vídeo... Esto puede tardar 1-2 minutos."):
+    if st.button("Procesar"):
+        with st.spinner("Analizando..."):
             try:
-                # 1. Crear archivo temporal para evitar errores de subida
+                # 1. Gestión del archivo temporal
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tfile:
                     tfile.write(archivo.read())
                     temp_path = tfile.name
 
-                # 2. Subir a Google
+                # 2. Subida a Google
                 video_up = genai.upload_file(path=temp_path)
                 while video_up.state.name == "PROCESSING":
-                    time.sleep(3)
+                    time.sleep(2)
                     video_up = genai.get_file(video_up.name)
 
-                # 3. LÓGICA DE MODELOS (Si uno falla, prueba el otro)
-                modelos_a_probar = ['gemini-1.5-flash', 'gemini-1.5-pro']
+                # 3. Lógica de IA (Flash y Pro)
+                modelos = ['gemini-1.5-flash', 'gemini-1.5-pro']
                 respuesta_ia = None
-                error_acumulado = ""
-
+                
                 prompt = f"""
-                ACTÚA COMO UN PERITO EXPERTO. Analiza el vídeo y genera un presupuesto detallado.
+                ACTÚA COMO UN PERITO EXPERTO. Genera un presupuesto profesional.
                 DATOS ADICIONALES: {mides}
-                INVENTARIO DEL CLIENTE: {inventario_text}
-                INSTRUCCIONES:
-                1. Identifica materiales y avería.
-                2. Prioriza precios del INVENTARIO. Si no están, busca precios de mercado.
-                3. COSTES: 60€ visita + 45€/h + Materiales + 21% IVA.
-                Responde en ESPAÑOL de forma profesional.
+                INVENTARIO: {inventario_text}
+                
+                REGLAS:
+                1. Identifica daños y materiales en el vídeo.
+                2. USA PRECIOS DEL INVENTARIO si existen. Si no, busca precios de mercado.
+                3. TARIFAS: 60€ visita + 45€/h + Materiales + 21% IVA.
+                4. Idioma: ESPAÑOL.
                 """
 
-                for nombre_modelo in modelos_a_probar:
+                for m_name in modelos:
                     try:
-                        st.info(f"Intentando con modelo: {nombre_modelo}...")
-                        model = genai.GenerativeModel(nombre_modelo)
+                        model = genai.GenerativeModel(m_name)
                         respuesta_ia = model.generate_content([prompt, video_up])
-                        if respuesta_ia:
-                            break # Si funciona, salimos del bucle
-                    except Exception as e:
-                        error_acumulado += f"\n- Error en {nombre_modelo}: {str(e)}"
+                        if respuesta_ia: break
+                    except:
                         continue
 
                 if respuesta_ia:
-                    resultado_final = respuesta_ia.text
-                    st.markdown("### Resultado del Análisis")
-                    st.write(resultado_final)
+                    st.markdown("### Resultado")
+                    st.write(respuesta_ia.text)
 
                     # 4. Generar PDF
                     pdf = FPDF()
                     pdf.add_page()
                     pdf.set_font("Arial", size=12)
-                    pdf.cell(200, 10, txt="PRESUPUESTO ScopeAI", ln=1, align='C')
+                    pdf.cell(200, 10, txt="PRESUPUESTO - ScopeAI", ln=1, align='C')
                     pdf.ln(10)
-                    texto_pdf = resultado_final.encode('latin-1', 'replace').decode('latin-1')
-                    pdf.multi_cell(0, 10, txt=texto_pdf)
+                    texto_limpio = respuesta_ia.text.encode('latin-1', 'replace').decode('latin-1')
+                    pdf.multi_cell(0, 10, txt=texto_limpio)
                     
-                    nombre_pdf = "presupuesto.pdf"
-                    pdf.output(nombre_pdf)
-                    with open(nombre_pdf, "rb") as f:
-                        st.download_button("📥 Descargar PDF", f, file_name="Presupuesto_ScopeAI.pdf")
-                else:
-                    st.error(f"No ha funcionado ningún modelo. Detalles: {error_acumulado}")
-
-                # Limpiar archivo temporal
-                os.unlink(temp_path)
+                    pdf_file = "presupuesto.pdf"
+                    pdf.output(pdf_file)
+                    with open(pdf_file, "rb") as f:
+                        st.download_button("📥 Descargar PDF", f, file_name="Presupuesto.pdf")
+                
+                os.unlink(temp_path) # Borrar temporal
 
             except Exception as e:
-                st.error(f"Error general: {e}")
+                st.error(f"Error: {e}")
