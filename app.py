@@ -6,92 +6,97 @@ import time
 import os
 import tempfile
 
-# 1. CONFIGURACIÓ DE L'API
+# Configuración de API
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
-st.set_page_config(page_title="ScopeAI Gemini Multi-Model", layout="wide", page_icon="💎")
+st.set_page_config(page_title="ScopeAI Technical", layout="wide")
+st.title("ScopeAI")
 
-# --- SISTEMA DE SESSIÓ ---
+# --- LOGIN ---
 if 'auth' not in st.session_state: st.session_state.auth = False
-if 'history' not in st.session_state: st.session_state.history = []
-
 if not st.session_state.auth:
-    st.title("🔐 ScopeAI Enterprise Login")
-    u = st.text_input("Usuari")
-    if st.button("Entrar"):
+    if st.text_input("Usuario") and st.button("Entrar"):
         st.session_state.auth = True
         st.rerun()
     st.stop()
 
-# --- FUNCIONALITAT DE MODELS (Tots els disponibles) ---
-def get_available_models():
-    try:
-        # Busquem models que suportin generació de contingut (multimodals)
-        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        return models
-    except:
-        return ["models/gemini-1.5-pro-latest", "models/gemini-1.5-flash-latest"]
-
-# --- BARRA LATERAL ---
+# --- SIDEBAR ---
 with st.sidebar:
-    st.header("⚙️ Panell de Control")
-    
-    available_models = get_available_models()
-    model_triat = st.selectbox(
-        "🧠 Tria qualsevol model Gemini",
-        available_models,
-        index=0,
-        help="Aquí surten tots els models disponibles a la teva API Key."
-    )
-    
+    st.header("Configuración")
+    ex = st.file_uploader("Inventario (Excel)", type=['xlsx'])
+    inv_data = pd.read_excel(ex).to_string() if ex else ""
     st.markdown("---")
-    ex = st.file_uploader("📦 Inventari (Excel)", type=['xlsx'])
-    inv_data = pd.read_excel(ex).to_string() if ex else "Sense inventari."
-    
-    st.markdown("---")
-    c_visita = st.number_input("Preu Visita Base (€)", value=60.0)
-    c_hora = st.number_input("Preu Hora (€)", value=45.0)
-    
-    st.markdown("---")
-    # GPS i Localització
-    incloure_gps = st.checkbox("Capturar GPS", value=True)
-    loc_actual = "📍 Mataró, Espanya" if incloure_gps else "Ubicació Manual"
-    st.caption(f"Localització: {loc_actual}")
-    
-    st.markdown("---")
-    # Urgència
-    es_urgent = st.toggle("🚨 Urgència 24h", value=False)
-    p_final_visita = c_visita * 1.5 if es_urgent else c_visita
+    c_visita = st.number_input("Precio Visita (€)", value=60.0)
+    c_hora = st.number_input("Precio Hora (€)", value=45.0)
 
-# --- PANELL CENTRAL ---
-st.title("🏗️ ScopeAI: Multi-Model Engineering")
-
-# 1. DASHBOARD
-if st.session_state.history:
-    st.markdown("### 📊 Dashboard d'Estat")
-    df_h = pd.DataFrame(st.session_state.history)
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Pressupostos", len(df_h))
-    c2.metric("Estalvi CO2", f"{len(df_h)*1.2:.1f} kg")
-    c3.metric("Flota", "🟢 Activa")
-
-# 2. INSPECCIÓ
-st.subheader("📸 Captura d'Avaria")
-with st.expander("🔦 AJUDA PER A LA GRAVACIÓ"):
-    st.write("1. Flaix actiu. 2. Perspectiva de lluny a prop. 3. Descriu l'avaria parlant.")
-
-col_in, col_info = st.columns([2, 1])
-with col_in:
-    notas = st.text_area("Notes manuals", placeholder="Explica l'avaria...")
-    archivo = st.file_uploader("Vídeo o Foto", type=['mp4', 'mov', 'jpg', 'png', 'jpeg'])
+# --- ENTRADA ---
+st.subheader("Datos")
+notas = st.text_area("Información técnica / Observaciones")
+archivo = st.file_uploader("Subir vídeo o foto", type=['mp4', 'mov', 'jpg', 'png', 'jpeg'])
 
 if archivo:
-    if st.button(f"🚀 EXECUTAR AMB {model_triat.split('/')[-1].upper()}"):
-        with st.status(f"Connectant amb {model_triat}..."):
+    if st.button("EJECUTAR ANÁLISIS"):
+        with st.status("Ingeniería y búsqueda de enlaces en marcha..."):
             try:
+                # 1. Proceso de subida robusto para móvil
                 suffix = os.path.splitext(archivo.name)[1]
                 with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tfile:
                     tfile.write(archivo.read())
                     temp_path = tfile.name
 
-                # Pujada de fit
+                file_uploaded = genai.upload_file(path=temp_path)
+                while file_uploaded.state.name == "PROCESSING":
+                    time.sleep(2)
+                    file_uploaded = genai.get_file(file_uploaded.name)
+
+                # 2. PROMPT REFORZADO CON BÚSQUEDA EXTERNA Y LINKS
+                # Usamos el motor 2.0 Flash o 1.5 Pro para máxima capacidad de búsqueda
+                model = genai.GenerativeModel('gemini-1.5-pro')
+                
+                prompt = f"""
+                ERES UN INGENIERO TÉCNICO Y PERITO JUDICIAL ESPECIALISTA EN REFORMAS.
+                
+                TAREA 1: Identificación Visual.
+                Analiza el archivo adjunto. Identifica materiales dañados y dimensiones.
+                
+                TAREA 2: Memoria de Ingeniería.
+                Usa fórmulas reales (Bernoulli para fluidos, Darcy-Weisbach para pérdidas de presión, o cálculos de transmitancia térmica si es una ventana). 
+                DAME RESULTADOS DISCRECIONALES, NO PROBABILÍSTICOS.
+                
+                TAREA 3: Presupuesto y Búsqueda de Materiales (CRÍTICO).
+                - Busca precios en este Excel: {inv_data}
+                - SI EL MATERIAL NO ESTÁ EN EL EXCEL: Es OBLIGATORIO que navegues por internet y encuentres el precio de mercado actual en España (Leroy Merlin, Bricomart, Amazon, etc.).
+                - PARA CADA MATERIAL: Incluye obligatoriamente el NOMBRE, PRECIO y el LINK directo al producto.
+                
+                DESGLOSE FINAL:
+                - Visita y Desplazamiento: {c_visita}€
+                - Mano de Obra: {c_hora}€/h x [Horas calculadas]
+                - Materiales: [Lista con nombres, precios y LINKS]
+                - Total con 21% IVA.
+
+                IDIOMA: ESPAÑOL. RESPONDE CON RIGOR TÉCNICO.
+                """
+
+                respuesta = model.generate_content([prompt, file_uploaded])
+                
+                if respuesta.text:
+                    st.markdown("### Informe Técnico con Enlaces")
+                    st.markdown(respuesta.text)
+                    
+                    # 3. Generar PDF
+                    pdf = FPDF()
+                    pdf.add_page()
+                    pdf.set_font("Arial", size=10)
+                    # Limpiamos el texto para el PDF
+                    txt_pdf = respuesta.text.encode('latin-1', 'replace').decode('latin-1')
+                    pdf.multi_cell(0, 5, txt=txt_pdf)
+                    pdf.output("ScopeAI_Final.pdf")
+                    with open("ScopeAI_Final.pdf", "rb") as f:
+                        st.download_button("📥 Descargar Informe con Enlaces", f, file_name="ScopeAI_Final.pdf")
+
+                # Limpieza de archivos en el servidor y en Google
+                os.unlink(temp_path)
+                genai.delete_file(file_uploaded.name)
+
+            except Exception as e:
+                st.error(f"Error técnico: {str(e)}")
