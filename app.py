@@ -3,14 +3,12 @@ import google.generativeai as genai
 import pandas as pd
 from fpdf import FPDF
 import time
-import os
-import tempfile
 
 # Configuración API
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
 st.set_page_config(page_title="ScopeAI Technical", layout="wide")
-st.title("ScopeAI: Ingeniería y Peritaje")
+st.title("ScopeAI")
 
 # --- LOGIN ---
 if 'auth' not in st.session_state:
@@ -22,80 +20,77 @@ if not st.session_state.auth:
         st.rerun()
     st.stop()
 
-# --- CONFIGURACIÓN TÉCNICA ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("Configuración")
     ex = st.file_uploader("Inventario (Excel)", type=['xlsx'])
     inv_data = ""
     if ex:
-        inv_data = pd.read_excel(ex).to_string()
+        df = pd.read_excel(ex)
+        inv_data = df.to_string()
     
     st.markdown("---")
-    coste_visita = st.number_input("Precio Visita (€)", value=60.0)
-    coste_hora = st.number_input("Precio Hora (€)", value=45.0)
+    c_visita = st.number_input("Precio Visita (€)", value=60.0)
+    c_hora = st.number_input("Precio Hora (€)", value=45.0)
 
+# --- ENTRADA ---
 st.subheader("Datos")
-notas = st.text_area("Descripción / Medidas", placeholder="Ej: Cálculo de caudal, tubería cobre 15mm...")
-video = st.file_uploader("Subir archivo", type=['mp4', 'mov', 'jpg', 'png'])
+notas = st.text_area("Información técnica / Fórmulas deseadas")
+archivo = st.file_uploader("Subir vídeo o foto", type=['mp4', 'mov', 'jpg', 'png', 'jpeg'])
 
-if video:
-    st.video(video)
-    if st.button("EJECUTAR CÁLCULOS"):
-        with st.status("Procesando cálculos discrecionales..."):
+if archivo:
+    st.info(f"Archivo cargado: {archivo.name} ({archivo.size // 1024} KB)")
+
+    if st.button("EJECUTAR ANÁLISIS"):
+        with st.status("Calculando ingeniería..."):
             try:
-                # 1. Crear temporal con extensión correcta
-                suffix = ".mp4" if "video" in video.type else ".jpg"
-                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tfile:
-                    tfile.write(video.read())
-                    temp_path = tfile.name
+                # 1. DETECCIÓN MANUAL AGRESIVA DE MIME TYPE
+                m_type = "video/mp4" # Default
+                if archivo.name.lower().endswith(('.jpg', '.jpeg')): m_type = "image/jpeg"
+                elif archivo.name.lower().endswith('.png'): m_type = "image/png"
+                elif archivo.name.lower().endswith('.mov'): m_type = "video/quicktime"
 
-                # 2. Subir forzando el MIME TYPE (Esto arregla tu error)
-                mime_type = video.type if video.type else "video/mp4"
-                v_up = genai.upload_file(path=temp_path, mime_type=mime_type)
-                
-                while v_up.state.name == "PROCESSING":
-                    time.sleep(2)
-                    v_up = genai.get_file(v_up.name)
+                # 2. LECTURA DIRECTA DE BYTES (Saltamos el error de 'Unknown mime type')
+                # Enviamos el contenido como una lista de partes directamente
+                blob = {
+                    "mime_type": m_type,
+                    "data": archivo.getvalue()
+                }
 
-                # 3. Modelos (Prioridad al nuevo Gemini 2.0 Flash)
-                modelos = ['gemini-2.0-flash', 'gemini-1.5-pro']
-                respuesta = None
+                # 3. MODELO DE ALTA PRECISIÓN
+                model = genai.GenerativeModel('gemini-1.5-pro')
 
                 prompt = f"""
-                ACTÚA COMO INGENIERO EXPERTO. Resultados DISCRECIONALES (No probabilísticos).
-                DATOS ADICIONALES: {notas}
-                INVENTARIO: {inv_data}
+                ERES UN INGENIERO DE INSTALACIONES MECÁNICAS.
+                DATOS TÉCNICOS: {notas}
+                INVENTARIO PRECIOS: {inv_data}
                 
-                REGLAS DE CÁLCULO:
-                1. IDENTIFICACIÓN: Usa el vídeo para determinar diámetros y materiales.
-                2. FÓRMULAS: Aplica fórmulas de ingeniería (Bernoulli, Darcy-Weisbach, Hazen-Williams) para justificar mediciones.
-                3. PRECIOS: Prioriza Excel. Si no existe, busca precios de mercado en tiempo real.
-                4. MANO DE OBRA: Visita {coste_visita}€, Hora {coste_hora}€.
+                PROTOCOLO:
+                1. Determina medidas reales (discrecionales) del vídeo/imagen.
+                2. Usa fórmulas de ingeniería (Bernoulli, Darcy, Manning, etc.) para validar el daño o la instalación.
+                3. Genera presupuesto: Visita {c_visita}€ + {c_hora}€/h + Materiales (Excel o internet) + 21% IVA.
+                4. Incluye sección "Memoria de Cálculo" con fórmulas en LaTeX.
                 
-                ENTREGABLE: Memoria de cálculos + Presupuesto desglosado + IVA. ESPAÑOL.
+                IDIOMA: ESPAÑOL. SÉ DETERMINISTA, NO PROBABILÍSTICO.
                 """
 
-                for m_name in modelos:
-                    try:
-                        m = genai.GenerativeModel(m_name)
-                        respuesta = m.generate_content([prompt, v_up])
-                        if respuesta: break
-                    except: continue
-
-                if respuesta:
+                # Enviamos los bytes directamente en la llamada
+                res = model.generate_content([prompt, blob])
+                
+                if res:
                     st.markdown("---")
-                    st.markdown(respuesta.text)
-                    
+                    st.markdown(res.text)
+
                     # PDF
                     pdf = FPDF()
                     pdf.add_page()
                     pdf.set_font("Arial", size=10)
-                    pdf.multi_cell(0, 5, txt=respuesta.text.encode('latin-1', 'replace').decode('latin-1'))
+                    pdf_text = res.text.encode('latin-1', 'replace').decode('latin-1')
+                    pdf.multi_cell(0, 5, txt=pdf_text)
                     pdf.output("informe.pdf")
                     with open("informe.pdf", "rb") as f:
-                        st.download_button("📥 Informe PDF", f, file_name="ScopeAI_Informe.pdf")
-                
-                os.unlink(temp_path)
+                        st.download_button("📥 Descargar Informe PDF", f, file_name="Informe_Tecnico.pdf")
 
             except Exception as e:
-                st.error(f"Error técnico: {str(e)}")
+                st.error(f"Fallo en el motor de ingeniería: {str(e)}")
+                st.warning("Consejo: Si el error persiste, intenta subir una FOTO en lugar de un vídeo para descartar problemas de ancho de banda.")
