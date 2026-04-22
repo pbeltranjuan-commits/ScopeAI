@@ -4,14 +4,15 @@ import pandas as pd
 from fpdf import FPDF
 import time
 import os
+import tempfile
 
-# Configuración de API
+# Configuración API
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
 st.set_page_config(page_title="ScopeAI Technical", layout="wide")
 st.title("ScopeAI: Ingeniería y Peritaje")
 
-# --- LOGIN SIMPLIFICADO ---
+# --- LOGIN ---
 if 'auth' not in st.session_state:
     st.session_state.auth = False
 if not st.session_state.auth:
@@ -21,80 +22,80 @@ if not st.session_state.auth:
         st.rerun()
     st.stop()
 
-# --- SIDEBAR: EXCEL Y CONFIGURACIÓN ---
+# --- CONFIGURACIÓN TÉCNICA ---
 with st.sidebar:
-    st.header("Configuración Técnica")
-    ex = st.file_uploader("Subir Inventario Precios (Excel)", type=['xlsx'])
+    st.header("Configuración")
+    ex = st.file_uploader("Inventario (Excel)", type=['xlsx'])
     inv_data = ""
     if ex:
-        df = pd.read_excel(ex)
-        inv_data = df.to_string()
-        st.success("Inventario cargado")
+        inv_data = pd.read_excel(ex).to_string()
     
     st.markdown("---")
-    st.header("Costes de Mano de Obra")
     coste_visita = st.number_input("Precio Visita (€)", value=60.0)
     coste_hora = st.number_input("Precio Hora (€)", value=45.0)
 
-# --- CUERPO PRINCIPAL ---
-col1, col2 = st.columns(2)
+st.subheader("Datos")
+notas = st.text_area("Descripción / Medidas", placeholder="Ej: Cálculo de caudal, tubería cobre 15mm...")
+video = st.file_uploader("Subir archivo", type=['mp4', 'mov', 'jpg', 'png'])
 
-with col1:
-    st.subheader("Datos de entrada")
-    notas = st.text_area("Descripción técnica / Medidas", placeholder="Ej: Tubo de cobre 15mm, presión 3 bar...")
-    video = st.file_uploader("Subir vídeo o foto", type=['mp4', 'mov', 'jpg', 'png'])
+if video:
+    st.video(video)
+    if st.button("EJECUTAR CÁLCULOS"):
+        with st.status("Procesando cálculos discrecionales..."):
+            try:
+                # 1. Crear temporal con extensión correcta
+                suffix = ".mp4" if "video" in video.type else ".jpg"
+                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tfile:
+                    tfile.write(video.read())
+                    temp_path = tfile.name
 
-with col2:
-    if video:
-        st.video(video)
-        if st.button("EJECUTAR CÁLCULOS DE INGENIERÍA"):
-            with st.status("Procesando cálculos deterministas..."):
-                try:
-                    # Guardar temporal
-                    with open("temp_file", "wb") as f:
-                        f.write(video.getbuffer())
-                    
-                    # Subir a Gemini
-                    v_up = genai.upload_file(path="temp_file")
-                    while v_up.state.name == "PROCESSING":
-                        time.sleep(2)
-                        v_up = genai.get_file(v_up.name)
+                # 2. Subir forzando el MIME TYPE (Esto arregla tu error)
+                mime_type = video.type if video.type else "video/mp4"
+                v_up = genai.upload_file(path=temp_path, mime_type=mime_type)
+                
+                while v_up.state.name == "PROCESSING":
+                    time.sleep(2)
+                    v_up = genai.get_file(v_up.name)
 
-                    # PROMPT TÉCNICO DE INGENIERÍA
-                    model = genai.GenerativeModel('gemini-1.5-pro') # Usamos Pro para cálculos complejos
-                    prompt = f"""
-                    Eres un Ingeniero de Instalaciones y Perito. 
-                    Analiza el archivo y los datos: {notas}.
-                    
-                    TAREAS:
-                    1. IDENTIFICACIÓN DETERMINISTA: No especules. Identifica materiales y dimensiones.
-                    2. FÓRMULAS DE INGENIERÍA: Aplica fórmulas reales (Hazen-Williams para pérdidas de carga, Darcy-Weisbach, o cálculo de caudales $$Q = A \cdot v$$). Muestra las fórmulas usadas.
-                    3. BÚSQUEDA DE PRECIOS: Usa este inventario: {inv_data}. Si algo no está, busca en internet el precio actual.
-                    4. PRESUPUESTO MANO DE OBRA: Usa Visita: {coste_visita}€ y Hora: {coste_hora}€.
-                    
-                    ESTRUCTURA DE RESPUESTA:
-                    - Memoria Técnica (Fórmulas y Cálculos).
-                    - Desglose de Materiales.
-                    - Presupuesto Final (Base, IVA 21%, Total).
-                    
-                    RESPONDE EN ESPAÑOL TÉCNICO.
-                    """
-                    
-                    res = model.generate_content([prompt, v_up])
+                # 3. Modelos (Prioridad al nuevo Gemini 2.0 Flash)
+                modelos = ['gemini-2.0-flash', 'gemini-1.5-pro']
+                respuesta = None
+
+                prompt = f"""
+                ACTÚA COMO INGENIERO EXPERTO. Resultados DISCRECIONALES (No probabilísticos).
+                DATOS ADICIONALES: {notas}
+                INVENTARIO: {inv_data}
+                
+                REGLAS DE CÁLCULO:
+                1. IDENTIFICACIÓN: Usa el vídeo para determinar diámetros y materiales.
+                2. FÓRMULAS: Aplica fórmulas de ingeniería (Bernoulli, Darcy-Weisbach, Hazen-Williams) para justificar mediciones.
+                3. PRECIOS: Prioriza Excel. Si no existe, busca precios de mercado en tiempo real.
+                4. MANO DE OBRA: Visita {coste_visita}€, Hora {coste_hora}€.
+                
+                ENTREGABLE: Memoria de cálculos + Presupuesto desglosado + IVA. ESPAÑOL.
+                """
+
+                for m_name in modelos:
+                    try:
+                        m = genai.GenerativeModel(m_name)
+                        respuesta = m.generate_content([prompt, v_up])
+                        if respuesta: break
+                    except: continue
+
+                if respuesta:
                     st.markdown("---")
-                    st.markdown(res.text)
+                    st.markdown(respuesta.text)
                     
                     # PDF
                     pdf = FPDF()
                     pdf.add_page()
                     pdf.set_font("Arial", size=10)
-                    pdf.cell(200, 10, txt="INFORME TÉCNICO Y PRESUPUESTO - ScopeAI", ln=1, align='C')
-                    clean_text = res.text.encode('latin-1', 'replace').decode('latin-1')
-                    pdf.multi_cell(0, 5, txt=clean_text)
+                    pdf.multi_cell(0, 5, txt=respuesta.text.encode('latin-1', 'replace').decode('latin-1'))
                     pdf.output("informe.pdf")
-                    
                     with open("informe.pdf", "rb") as f:
-                        st.download_button("Descargar Informe PDF", f, file_name="Informe_Tecnico.pdf")
+                        st.download_button("📥 Informe PDF", f, file_name="ScopeAI_Informe.pdf")
+                
+                os.unlink(temp_path)
 
-                except Exception as e:
-                    st.error(f"Error en el motor: {str(e)}")
+            except Exception as e:
+                st.error(f"Error técnico: {str(e)}")
