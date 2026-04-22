@@ -4,93 +4,85 @@ import pandas as pd
 from fpdf import FPDF
 import time
 
-# Configuración API
+# 1. Provar la clau que tens als Secrets
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
-st.set_page_config(page_title="ScopeAI Technical", layout="wide")
+st.set_page_config(page_title="ScopeAI", layout="wide")
 st.title("ScopeAI")
 
-# --- LOGIN ---
-if 'auth' not in st.session_state:
-    st.session_state.auth = False
+# --- LOGIN SIMPLE ---
+if 'auth' not in st.session_state: st.session_state.auth = False
 if not st.session_state.auth:
-    u = st.text_input("Usuario")
-    if st.button("Entrar"):
+    if st.text_input("Usuari") and st.button("Entrar"):
         st.session_state.auth = True
         st.rerun()
     st.stop()
 
-# --- SIDEBAR ---
+# --- CONFIGURACIÓ ---
 with st.sidebar:
-    st.header("Configuración")
-    ex = st.file_uploader("Inventario (Excel)", type=['xlsx'])
-    inv_data = ""
-    if ex:
-        df = pd.read_excel(ex)
-        inv_data = df.to_string()
-    
-    st.markdown("---")
-    c_visita = st.number_input("Precio Visita (€)", value=60.0)
-    c_hora = st.number_input("Precio Hora (€)", value=45.0)
+    ex = st.file_uploader("Inventari (Excel)", type=['xlsx'])
+    inv_data = pd.read_excel(ex).to_string() if ex else ""
+    c_visita = st.number_input("Preu Visita (€)", value=60.0)
+    c_hora = st.number_input("Preu Hora (€)", value=45.0)
 
-# --- ENTRADA ---
 st.subheader("Datos")
-notas = st.text_area("Información técnica / Fórmulas deseadas")
-archivo = st.file_uploader("Subir vídeo o foto", type=['mp4', 'mov', 'jpg', 'png', 'jpeg'])
+notas = st.text_area("Informació tècnica")
+archivo = st.file_uploader("Subir archivo", type=['mp4', 'mov', 'jpg', 'png', 'jpeg'])
 
 if archivo:
-    st.info(f"Archivo cargado: {archivo.name} ({archivo.size // 1024} KB)")
+    st.info(f"Arxiu llest: {archivo.name} ({archivo.size // 1024} KB)")
 
     if st.button("EJECUTAR ANÁLISIS"):
-        with st.status("Calculando ingeniería..."):
+        with st.status("Buscant motor disponible i calculant..."):
             try:
-                # 1. DETECCIÓN MANUAL AGRESIVA DE MIME TYPE
-                m_type = "video/mp4" # Default
-                if archivo.name.lower().endswith(('.jpg', '.jpeg')): m_type = "image/jpeg"
-                elif archivo.name.lower().endswith('.png'): m_type = "image/png"
-                elif archivo.name.lower().endswith('.mov'): m_type = "video/quicktime"
+                # Preparem el fitxer per enviar-lo directament (evita errors de tipus)
+                m_type = archivo.type if archivo.type else "video/mp4"
+                blob = {"mime_type": m_type, "data": archivo.getvalue()}
 
-                # 2. LECTURA DIRECTA DE BYTES (Saltamos el error de 'Unknown mime type')
-                # Enviamos el contenido como una lista de partes directamente
-                blob = {
-                    "mime_type": m_type,
-                    "data": archivo.getvalue()
-                }
-
-                # 3. MODELO DE ALTA PRECISIÓN
-                model = genai.GenerativeModel('gemini-1.5-pro')
+                # LLISTA DE MOTORS PER ORDRE DE PRIORITAT
+                motors_a_probar = [
+                    'gemini-1.5-flash', 
+                    'models/gemini-1.5-flash',
+                    'gemini-1.5-pro',
+                    'models/gemini-1.5-pro',
+                    'gemini-2.0-flash-exp'
+                ]
+                
+                respuesta = None
+                error_final = ""
 
                 prompt = f"""
-                ERES UN INGENIERO DE INSTALACIONES MECÁNICAS.
-                DATOS TÉCNICOS: {notas}
-                INVENTARIO PRECIOS: {inv_data}
-                
-                PROTOCOLO:
-                1. Determina medidas reales (discrecionales) del vídeo/imagen.
-                2. Usa fórmulas de ingeniería (Bernoulli, Darcy, Manning, etc.) para validar el daño o la instalación.
-                3. Genera presupuesto: Visita {c_visita}€ + {c_hora}€/h + Materiales (Excel o internet) + 21% IVA.
-                4. Incluye sección "Memoria de Cálculo" con fórmulas en LaTeX.
-                
-                IDIOMA: ESPAÑOL. SÉ DETERMINISTA, NO PROBABILÍSTICO.
+                ACTUA COM ENGINYER EXPERT. SIGUES DETERMINISTA.
+                Dades: {notas}. Inventari: {inv_data}. 
+                Costes: {c_visita}€ visita + {c_hora}€/h.
+                Aplica fórmules d'enginyeria (Bernoulli, caudals, etc.) i pressupost real.
+                Idioma: ESPAÑOL.
                 """
 
-                # Enviamos los bytes directamente en la llamada
-                res = model.generate_content([prompt, blob])
-                
-                if res:
-                    st.markdown("---")
-                    st.markdown(res.text)
+                # EL BUCLE QUE BUSCA EL MOTOR QUE FUNCIONI
+                for m_name in motors_a_probar:
+                    try:
+                        model = genai.GenerativeModel(m_name)
+                        respuesta = model.generate_content([prompt, blob])
+                        if respuesta: break
+                    except Exception as e:
+                        error_final = str(e)
+                        continue # Si falla, prova el següent motor
 
-                    # PDF
+                if respuesta:
+                    st.success(f"Analitzat amb èxit!")
+                    st.markdown(respuesta.text)
+                    
+                    # Generar el PDF per descarregar
                     pdf = FPDF()
                     pdf.add_page()
                     pdf.set_font("Arial", size=10)
-                    pdf_text = res.text.encode('latin-1', 'replace').decode('latin-1')
-                    pdf.multi_cell(0, 5, txt=pdf_text)
+                    pdf.multi_cell(0, 5, txt=respuesta.text.encode('latin-1', 'replace').decode('latin-1'))
                     pdf.output("informe.pdf")
                     with open("informe.pdf", "rb") as f:
-                        st.download_button("📥 Descargar Informe PDF", f, file_name="Informe_Tecnico.pdf")
+                        st.download_button("📥 Descarregar PDF", f, file_name="Informe_ScopeAI.pdf")
+                else:
+                    st.error(f"Cap motor ha funcionat. Últim error: {error_final}")
 
             except Exception as e:
-                st.error(f"Fallo en el motor de ingeniería: {str(e)}")
-                st.warning("Consejo: Si el error persiste, intenta subir una FOTO en lugar de un vídeo para descartar problemas de ancho de banda.")
+                st.error(f"Error crític: {str(e)}")
