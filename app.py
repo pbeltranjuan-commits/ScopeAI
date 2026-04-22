@@ -4,85 +4,88 @@ import pandas as pd
 from fpdf import FPDF
 import time
 
-# 1. Provar la clau que tens als Secrets
+# Configuración con la clave de tus Secrets
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
 st.set_page_config(page_title="ScopeAI", layout="wide")
 st.title("ScopeAI")
 
-# --- LOGIN SIMPLE ---
+# --- LOGIN ---
 if 'auth' not in st.session_state: st.session_state.auth = False
 if not st.session_state.auth:
-    if st.text_input("Usuari") and st.button("Entrar"):
+    if st.text_input("Usuario") and st.button("Entrar"):
         st.session_state.auth = True
         st.rerun()
     st.stop()
 
-# --- CONFIGURACIÓ ---
+# --- CONFIGURACIÓN TÉCNICA ---
 with st.sidebar:
-    ex = st.file_uploader("Inventari (Excel)", type=['xlsx'])
+    ex = st.file_uploader("Inventario (Excel)", type=['xlsx'])
     inv_data = pd.read_excel(ex).to_string() if ex else ""
-    c_visita = st.number_input("Preu Visita (€)", value=60.0)
-    c_hora = st.number_input("Preu Hora (€)", value=45.0)
+    st.markdown("---")
+    c_visita = st.number_input("Precio Visita (€)", value=60.0)
+    c_hora = st.number_input("Precio Hora (€)", value=45.0)
 
 st.subheader("Datos")
-notas = st.text_area("Informació tècnica")
-archivo = st.file_uploader("Subir archivo", type=['mp4', 'mov', 'jpg', 'png', 'jpeg'])
+notas = st.text_area("Información técnica / Fórmulas")
+archivo = st.file_uploader("Subir vídeo o foto", type=['mp4', 'mov', 'jpg', 'png', 'jpeg'])
 
 if archivo:
-    st.info(f"Arxiu llest: {archivo.name} ({archivo.size // 1024} KB)")
+    st.info(f"Archivo cargado: {archivo.name} ({archivo.size // 1024} KB)")
 
     if st.button("EJECUTAR ANÁLISIS"):
-        with st.status("Buscant motor disponible i calculant..."):
+        with st.status("Detectando motores disponibles y calculando..."):
             try:
-                # Preparem el fitxer per enviar-lo directament (evita errors de tipus)
+                # 1. BUSCAR MODELOS REALES DISPONIBLES EN TU CUENTA
+                modelos_disponibles = [m.name for m in genai.list_models() 
+                                      if 'generateContent' in m.supported_generation_methods]
+                
+                # Filtramos para priorizar los modelos Pro o Flash 1.5
+                motores_validos = [m for m in modelos_disponibles if "1.5" in m or "2.0" in m]
+                if not motores_validos: motores_validos = modelos_disponibles
+
+                # 2. PREPARAR ARCHIVO (Envío directo de bytes)
                 m_type = archivo.type if archivo.type else "video/mp4"
                 blob = {"mime_type": m_type, "data": archivo.getvalue()}
 
-                # LLISTA DE MOTORS PER ORDRE DE PRIORITAT
-                motors_a_probar = [
-                    'gemini-1.5-flash', 
-                    'models/gemini-1.5-flash',
-                    'gemini-1.5-pro',
-                    'models/gemini-1.5-pro',
-                    'gemini-2.0-flash-exp'
-                ]
-                
-                respuesta = None
-                error_final = ""
-
+                # 3. PROMPT DE INGENIERÍA DISCRECIONAL
                 prompt = f"""
-                ACTUA COM ENGINYER EXPERT. SIGUES DETERMINISTA.
-                Dades: {notas}. Inventari: {inv_data}. 
-                Costes: {c_visita}€ visita + {c_hora}€/h.
-                Aplica fórmules d'enginyeria (Bernoulli, caudals, etc.) i pressupost real.
-                Idioma: ESPAÑOL.
+                ACTÚA COMO INGENIERO EXPERTO. RESULTADOS DISCRECIONALES.
+                DATOS: {notas}. INVENTARIO: {inv_data}. 
+                COSTES MANO OBRA: {c_visita}€ visita + {c_hora}€/h.
+                MUESTRA CÁLCULOS: Aplica fórmulas reales (Bernoulli, caudales, presiones).
+                IDOMA: ESPAÑOL.
                 """
 
-                # EL BUCLE QUE BUSCA EL MOTOR QUE FUNCIONI
-                for m_name in motors_a_probar:
+                # 4. INTENTO DE PROCESAMIENTO
+                respuesta = None
+                ultimo_error = ""
+
+                for motor in motores_validos:
                     try:
-                        model = genai.GenerativeModel(m_name)
+                        st.write(f"Probando motor: {motor}...")
+                        model = genai.GenerativeModel(motor)
                         respuesta = model.generate_content([prompt, blob])
                         if respuesta: break
                     except Exception as e:
-                        error_final = str(e)
-                        continue # Si falla, prova el següent motor
+                        ultimo_error = str(e)
+                        continue
 
                 if respuesta:
-                    st.success(f"Analitzat amb èxit!")
+                    st.success("¡Análisis completado!")
                     st.markdown(respuesta.text)
                     
-                    # Generar el PDF per descarregar
+                    # Generar PDF
                     pdf = FPDF()
                     pdf.add_page()
                     pdf.set_font("Arial", size=10)
-                    pdf.multi_cell(0, 5, txt=respuesta.text.encode('latin-1', 'replace').decode('latin-1'))
+                    pdf_text = respuesta.text.encode('latin-1', 'replace').decode('latin-1')
+                    pdf.multi_cell(0, 5, txt=pdf_text)
                     pdf.output("informe.pdf")
                     with open("informe.pdf", "rb") as f:
-                        st.download_button("📥 Descarregar PDF", f, file_name="Informe_ScopeAI.pdf")
+                        st.download_button("📥 Descargar Informe PDF", f, file_name="Informe_ScopeAI.pdf")
                 else:
-                    st.error(f"Cap motor ha funcionat. Últim error: {error_final}")
+                    st.error(f"Ningún motor ha funcionado. Error: {ultimo_error}")
 
             except Exception as e:
-                st.error(f"Error crític: {str(e)}")
+                st.error(f"Error general: {str(e)}")
