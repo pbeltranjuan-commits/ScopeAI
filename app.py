@@ -6,10 +6,11 @@ import time
 import os
 import tempfile
 
-# Configuración de API
+# 1. Configuración - Usamos el modelo que SABEMOS que te funciona
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+MODEL_NAME = 'gemini-1.5-flash' 
 
-st.set_page_config(page_title="ScopeAI Technical", layout="wide")
+st.set_page_config(page_title="ScopeAI", layout="wide")
 st.title("ScopeAI")
 
 # --- LOGIN ---
@@ -22,76 +23,50 @@ if not st.session_state.auth:
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.header("Configuración")
     ex = st.file_uploader("Inventario (Excel)", type=['xlsx'])
-    inv_data = pd.read_excel(ex).to_string() if ex else ""
+    inv_data = pd.read_excel(ex).to_string() if ex else "No hay inventario."
     st.markdown("---")
     c_visita = st.number_input("Precio Visita (€)", value=60.0)
     c_hora = st.number_input("Precio Hora (€)", value=45.0)
 
-# --- ENTRADA ---
+# --- DATOS ---
 st.subheader("Datos")
-notas = st.text_area("Información técnica / Observaciones")
+notas = st.text_area("Información técnica")
 archivo = st.file_uploader("Subir vídeo o foto", type=['mp4', 'mov', 'jpg', 'png', 'jpeg'])
 
 if archivo:
     if st.button("EJECUTAR ANÁLISIS"):
-        with st.status("Ingeniería en marcha: Calculando y buscando enlaces..."):
+        with st.status("Calculando y buscando materiales..."):
             try:
-                # 1. Proceso de subida robusto
+                # Proceso de archivo para que Google no de error de Mime Type
                 suffix = os.path.splitext(archivo.name)[1]
                 with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tfile:
                     tfile.write(archivo.read())
                     temp_path = tfile.name
 
-                file_uploaded = genai.upload_file(path=temp_path)
-                while file_uploaded.state.name == "PROCESSING":
+                file_up = genai.upload_file(path=temp_path)
+                while file_up.state.name == "PROCESSING":
                     time.sleep(2)
-                    file_uploaded = genai.get_file(file_uploaded.name)
+                    file_up = genai.get_file(file_up.name)
 
-                # 2. EL MODELO Y EL PROMPT (Ahora con enlaces)
-                # Usamos gemini-2.0-flash que es el mejor navegando
-                model = genai.GenerativeModel('gemini-2.0-flash')
-                
+                # EL PROMPT: Ingeniería + Búsqueda si no hay Excel + Links
                 prompt = f"""
-                ERES UN INGENIERO DE INSTALACIONES Y PERITO JUDICIAL.
+                ACTÚA COMO INGENIERO. 
+                1. Usa fórmulas de ingeniería (Bernoulli, caudales) para el análisis.
+                2. Busca materiales en este Excel: {inv_data}
+                3. SI EL MATERIAL NO ESTÁ EN EL EXCEL, búscalo en internet (Leroy Merlin, Amazon, etc.).
+                4. PARA CADA MATERIAL: Pon el nombre, el precio y el LINK directo de compra.
+                5. PRESUPUESTO: Visita {c_visita}€ + {c_hora}€/h + Materiales + 21% IVA.
                 
-                TAREA 1: Identifica materiales y daños mediante visión artificial.
-                TAREA 2: Aplica FÓRMULAS DE INGENIERÍA (caudal, presiones, secciones) para justificar la reparación.
-                TAREA 3: BÚSQUEDA DE MATERIALES.
-                   - Si el material NO está en este Excel: {inv_data}
-                   - DEBES buscar en internet el precio actual en España.
-                   - ES OBLIGATORIO añadir el LINK (URL) del producto (Leroy Merlin, Amazon, etc.).
-                
-                ESTRUCTURA DEL INFORME:
-                - Memoria Técnica (Cálculos y Fórmulas).
-                - Presupuesto desglosado:
-                    * Visita: {c_visita}€
-                    * Mano de obra: {c_hora}€/h
-                    * Materiales: [Nombre] - [Precio] - [LINK AL PRODUCTO]
-                - TOTAL con IVA 21%.
-
-                IDIOMA: ESPAÑOL. SÉ DETERMINISTA.
+                IDIOMA: ESPAÑOL.
                 """
 
-                respuesta = model.generate_content([prompt, file_uploaded])
+                model = genai.GenerativeModel(MODEL_NAME)
+                res = model.generate_content([prompt, file_up])
                 
-                if respuesta.text:
-                    st.markdown("### Informe de Ingeniería y Presupuesto")
-                    st.markdown(respuesta.text)
+                if res.text:
+                    st.markdown(res.text)
                     
-                    # 3. PDF (Nota: los links en PDF a veces son texto plano, pero se copian)
+                    # Generar PDF
                     pdf = FPDF()
-                    pdf.add_page()
-                    pdf.set_font("Arial", size=10)
-                    txt_pdf = respuesta.text.encode('latin-1', 'replace').decode('latin-1')
-                    pdf.multi_cell(0, 5, txt=txt_pdf)
-                    pdf.output("informe_links.pdf")
-                    with open("informe_links.pdf", "rb") as f:
-                        st.download_button("📥 Descargar Informe con Enlaces", f, file_name="ScopeAI_Final.pdf")
-
-                os.unlink(temp_path)
-                genai.delete_file(file_uploaded.name)
-
-            except Exception as e:
-                st.error(f"Error: {str(e)}")
+                    pdf.add
