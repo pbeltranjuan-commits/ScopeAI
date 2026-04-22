@@ -3,8 +3,10 @@ import google.generativeai as genai
 import pandas as pd
 from fpdf import FPDF
 import time
+import os
+import tempfile
 
-# Configuración con la clave de tus Secrets
+# Configuración de API
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
 st.set_page_config(page_title="ScopeAI", layout="wide")
@@ -18,74 +20,78 @@ if not st.session_state.auth:
         st.rerun()
     st.stop()
 
-# --- CONFIGURACIÓN TÉCNICA ---
+# --- CONFIGURACIÓN ---
 with st.sidebar:
     ex = st.file_uploader("Inventario (Excel)", type=['xlsx'])
     inv_data = pd.read_excel(ex).to_string() if ex else ""
-    st.markdown("---")
     c_visita = st.number_input("Precio Visita (€)", value=60.0)
     c_hora = st.number_input("Precio Hora (€)", value=45.0)
 
 st.subheader("Datos")
-notas = st.text_area("Información técnica / Fórmulas")
+notas = st.text_area("Información técnica")
 archivo = st.file_uploader("Subir vídeo o foto", type=['mp4', 'mov', 'jpg', 'png', 'jpeg'])
 
 if archivo:
-    st.info(f"Archivo cargado: {archivo.name} ({archivo.size // 1024} KB)")
-
+    st.success(f"Archivo detectado: {archivo.name}")
+    
     if st.button("EJECUTAR ANÁLISIS"):
-        with st.status("Detectando motores disponibles y calculando..."):
+        with st.status("Subiendo y procesando... No cierres el navegador"):
             try:
-                # 1. BUSCAR MODELOS REALES DISPONIBLES EN TU CUENTA
-                modelos_disponibles = [m.name for m in genai.list_models() 
-                                      if 'generateContent' in m.supported_generation_methods]
+                # 1. GUARDAR EN ARCHIVO TEMPORAL (Obligatorio para subida oficial)
+                suffix = os.path.splitext(archivo.name)[1]
+                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tfile:
+                    tfile.write(archivo.read())
+                    temp_path = tfile.name
+
+                # 2. SUBIDA ASÍNCRONA (Método robusto para archivos grandes en móvil)
+                st.write("Enviando archivo a Google...")
+                file_uploaded = genai.upload_file(path=temp_path)
                 
-                # Filtramos para priorizar los modelos Pro o Flash 1.5
-                motores_validos = [m for m in modelos_disponibles if "1.5" in m or "2.0" in m]
-                if not motores_validos: motores_validos = modelos_disponibles
+                # Esperar a que Google termine de procesar el video
+                while file_uploaded.state.name == "PROCESSING":
+                    time.sleep(2)
+                    file_uploaded = genai.get_file(file_uploaded.name)
+                
+                if file_uploaded.state.name == "FAILED":
+                    st.error("Error en el servidor de Google al procesar el vídeo.")
+                    st.stop()
 
-                # 2. PREPARAR ARCHIVO (Envío directo de bytes)
-                m_type = archivo.type if archivo.type else "video/mp4"
-                blob = {"mime_type": m_type, "data": archivo.getvalue()}
-
-                # 3. PROMPT DE INGENIERÍA DISCRECIONAL
+                # 3. LLAMADA AL MOTOR (Usamos 1.5 Flash por velocidad en móvil)
+                model = genai.GenerativeModel('gemini-1.5-flash')
+                
                 prompt = f"""
-                ACTÚA COMO INGENIERO EXPERTO. RESULTADOS DISCRECIONALES.
-                DATOS: {notas}. INVENTARIO: {inv_data}. 
-                COSTES MANO OBRA: {c_visita}€ visita + {c_hora}€/h.
-                MUESTRA CÁLCULOS: Aplica fórmulas reales (Bernoulli, caudales, presiones).
-                IDOMA: ESPAÑOL.
+                ERES INGENIERO DE INSTALACIONES.
+                DATOS TÉCNICOS: {notas}
+                INVENTARIO: {inv_data}
+                MANO OBRA: Visita {c_visita}€, Hora {c_hora}€.
+                
+                TAREA:
+                - Identifica materiales y daños.
+                - Aplica fórmulas de ingeniería (caudales, presiones) de forma DETERMINISTA.
+                - Genera presupuesto final con IVA 21%.
+                - RESPONDE EN ESPAÑOL.
                 """
 
-                # 4. INTENTO DE PROCESAMIENTO
-                respuesta = None
-                ultimo_error = ""
-
-                for motor in motores_validos:
-                    try:
-                        st.write(f"Probando motor: {motor}...")
-                        model = genai.GenerativeModel(motor)
-                        respuesta = model.generate_content([prompt, blob])
-                        if respuesta: break
-                    except Exception as e:
-                        ultimo_error = str(e)
-                        continue
-
-                if respuesta:
-                    st.success("¡Análisis completado!")
+                st.write("Generando cálculos de ingeniería...")
+                respuesta = model.generate_content([prompt, file_uploaded])
+                
+                if respuesta.text:
+                    st.markdown("---")
                     st.markdown(respuesta.text)
                     
-                    # Generar PDF
+                    # 4. PDF
                     pdf = FPDF()
                     pdf.add_page()
                     pdf.set_font("Arial", size=10)
-                    pdf_text = respuesta.text.encode('latin-1', 'replace').decode('latin-1')
-                    pdf.multi_cell(0, 5, txt=pdf_text)
+                    txt_pdf = respuesta.text.encode('latin-1', 'replace').decode('latin-1')
+                    pdf.multi_cell(0, 5, txt=txt_pdf)
                     pdf.output("informe.pdf")
                     with open("informe.pdf", "rb") as f:
-                        st.download_button("📥 Descargar Informe PDF", f, file_name="Informe_ScopeAI.pdf")
-                else:
-                    st.error(f"Ningún motor ha funcionado. Error: {ultimo_error}")
+                        st.download_button("📥 Descargar Informe", f, file_name="Informe_ScopeAI.pdf")
+
+                # Limpieza
+                os.unlink(temp_path)
+                genai.delete_file(file_uploaded.name)
 
             except Exception as e:
-                st.error(f"Error general: {str(e)}")
+                st.error(f"Error: {str(e)}")
