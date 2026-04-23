@@ -6,35 +6,34 @@ import time
 import os
 import tempfile
 
-# --- IMPORTACIONS DELS TEUS NOUS MÒDULS ---
+# --- IMPORTACIONS ---
 from usuarios import gestionar_sesion, verificar_cuota, registrar_uso_gratis
 from pagos import mostrar_pago
 from ingenieria import obtener_manual_formulas
 
-# 1. CONFIGURACIÓ DE L'API I PÀGINA
+# CONFIGURACIÓ
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 st.set_page_config(page_title="ScopeAI Ultimate", layout="wide", page_icon="💎")
 
-# --- LOGIN OBLIGATORI (Ara gestionat des de usuarios.py) ---
+# LOGIN
 gestionar_sesion()
+
+if 'history' not in st.session_state:
+    st.session_state.history = []
 
 st.title("🏗️ ScopeAI Enterprise")
 
-# Inicialitzar historial de la sessió
-if 'history' not in st.session_state: 
-    st.session_state.history = []
-
-# --- CONFIGURACIÓ SIDEBAR (Recuperat el selector de models i GPS) ---
+# SIDEBAR ORIGINAL COMPLET
 with st.sidebar:
     st.header("⚙️ Panell de Control")
-    st.write(f"👤 Usuari: **{st.session_state.get('user', 'Desconegut')}**")
+    st.write(f"👤 Usuari: **{st.session_state.user}**")
     
     try:
-        models_disponibles = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
     except:
-        models_disponibles = ["models/gemini-1.5-pro-latest", "models/gemini-1.5-flash-latest"]
+        models = ["models/gemini-1.5-pro-latest", "models/gemini-1.5-flash-latest"]
     
-    model_triat = st.selectbox("🧠 Model de Gemini", models_disponibles)
+    model_triat = st.selectbox("🧠 Model de Gemini", models)
     
     st.markdown("---")
     ex = st.file_uploader("📦 Inventari (Excel)", type=['xlsx'])
@@ -46,122 +45,100 @@ with st.sidebar:
     st.markdown("---")
     incloure_gps = st.checkbox("Capturar GPS", value=True)
     loc_actual = "📍 Carrer de la Riera, Mataró" if incloure_gps else "Ubicació Manual"
-    st.caption(f"Localització: {loc_actual}")
     
     es_urgent = st.toggle("🚨 Urgència 24h", value=False)
     p_final_visita = c_visita * 1.5 if es_urgent else c_visita
 
-# --- DASHBOARD (Mantenim les mètriques d'estalvi de CO2) ---
+# DASHBOARD DE MÈTRIQUES
 if st.session_state.history:
     st.markdown("### 📊 Resum d'Activitat")
-    df_h = pd.DataFrame(st.session_state.history)
     c1, c2, c3 = st.columns(3)
-    c1.metric("Pressupostos", len(df_h))
-    c2.metric("Estalvi CO2", f"{len(df_h)*1.2:.1f} kg")
+    c1.metric("Pressupostos", len(st.session_state.history))
+    c2.metric("Estalvi CO2", f"{len(st.session_state.history)*1.2:.1f} kg")
     c3.metric("Estat Flota", "🟢 Operativa")
     st.markdown("---")
 
-# --- ENTRADA DE DADES (Amb ajudes visuals) ---
+# INTERFÍCIE D'INSPECCIÓ
 st.subheader("📸 Nova Inspecció")
+with st.expander("🔦 CONSELLS DE GRAVACIÓ"):
+    st.write("Usa flaix, grava detalls i explica l'avaria en veu alta.")
 
-with st.expander("🔦 AJUDA PER A LA GRAVACIÓ"):
-    st.write("1. Flaix actiu. 2. Perspectiva de lluny a prop. 3. Descriu l'avaria parlant.")
-
-col_in, col_alert = st.columns([2, 1])
-with col_in:
-    notas = st.text_area("Información técnica", placeholder="Escriu o deixa que l'IA escolti el vídeo...")
+col_a, col_b = st.columns([2,1])
+with col_a:
+    notas = st.text_area("Información técnica", placeholder="Escriu aquí o descriu l'avaria...")
     archivo = st.file_uploader("Subir vídeo o foto", type=['mp4', 'mov', 'jpg', 'png', 'jpeg'])
 
-with col_alert:
+with col_b:
     if es_urgent: st.error("TARIFA D'URGÈNCIA ACTIVA")
-    st.info(f"Model actiu: {model_triat.split('/')[-1]}")
+    st.info(f"📍 {loc_actual}")
 
-# --- LÒGICA DE L'ANÀLISI ---
+# BOTÓ D'EXECUTAR AMB BLOQUEIG REAL
 if archivo:
-    st.success(f"Arxiu detectat: {archivo.name}")
-    
     if st.button("🚀 EJECUTAR ANÀLISI COMPLETA"):
-        # 1. Comprovem la quota
         pot_anar_gratis = verificar_cuota()
-        pago_ok = False
+        pago_validado = False
         
         if not pot_anar_gratis:
-            # Si no té gratis, cridem a pagos.py
-            pago_ok = mostrar_pago()
-            if not pago_ok:
-                st.warning("🔒 Operació bloquejada. Superat el límit diari. Si us plau, realitza el pagament.")
-                st.stop() # Aturem l'execució si no s'ha marcat el pagament
+            pago_validado = mostrar_pago()
+            if not pago_validado:
+                st.warning("🔒 Límite diario alcanzado. Por favor, confirma el pago de 1€.")
+                st.stop()
 
-        # 2. Execució real (Només si el "policia" el deixa passar)
-        with st.status(f"🔍 Analitzant amb {model_triat}..."):
+        # Si arriba aquí, s'executa
+        with st.status("🚀 Processant anàlisi d'enginyeria..."):
             try:
-                # Gestió de fitxer temporal
                 suffix = os.path.splitext(archivo.name)[1]
                 with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tfile:
                     tfile.write(archivo.read())
                     temp_path = tfile.name
 
-                # Pujada a l'API de Google
                 file_uploaded = genai.upload_file(path=temp_path)
                 while file_uploaded.state.name == "PROCESSING":
                     time.sleep(2)
                     file_uploaded = genai.get_file(file_uploaded.name)
 
-                # Carreguem fórmules d'enginyeria
-                manual_tecnic = obtener_manual_formulas()
-
+                formulas = obtener_manual_formulas()
                 model = genai.GenerativeModel(model_name=model_triat)
                 
-                # PROMPT ORIGINAL MILLORAT (Amb multi-cerca i fórmules)
                 prompt = f"""
-                ERES UN INGENIERO SENIOR Y PERITO.
-                UBICACIÓN: {loc_actual} | URGENCIA: {es_urgent}
-                FÓRMULAS DE APOYO: {manual_tecnic}
-                INVENTARIO EXCEL: {inv_data}
-                COSTES: Visita {p_final_visita}€, Mano obra {c_hora}€/h.
+                ERES INGENIERO SENIOR. USA ESTAS FÓRMULAS: {formulas}
+                DATOS: {loc_actual}, Urgencia: {es_urgent}, Notas: {notas}
+                INVENTARIO: {inv_data}
+                PRECIOS: Visita {p_final_visita}€, Mano de obra {c_hora}€/h.
 
-                TAREA:
-                1. IA SAFETY SCAN: Avisa si hay peligro con "!!! ALERTA DE SEGURIDAD !!!".
-                2. DIAGNÓSTICO: Identifica materiales y daños.
-                3. BÚSQUEDA MULTI-WEB (CRÍTICO): 
-                   - Busca recambios en Amazon Business, RS Components, ManoMano y Bauhaus.
-                   - Proporciona al menos 2 enlaces reales por artículo.
-                4. PRESUPUESTO: Desglose con IVA 21%.
-                5. ESG: Calcula ahorro de CO2.
-                6. RESPONDE EN CATALÀ.
+                INSTRUCCIONES:
+                1. IA Safety Scan obligatori.
+                2. Diagnóstico y materiales.
+                3. BUSCA EN 5 WEBS (Amazon Business, RS Components, ManoMano, Bauhaus, Distribuidores).
+                4. Presupuesto final con IVA 21%.
+                5. Responde en CATALÀ.
                 """
 
-                respuesta = model.generate_content([prompt, file_uploaded])
+                res = model.generate_content([prompt, file_uploaded])
                 
-                if respuesta.text:
+                if res.text:
                     st.markdown("---")
-                    st.markdown(respuesta.text)
+                    st.markdown(res.text)
                     
-                    # --- GENERACIÓ DE PDF ---
-                    try:
-                        pdf = FPDF()
-                        pdf.add_page()
-                        pdf.set_font("Arial", size=10)
-                        txt_pdf = respuesta.text.encode('latin-1', 'replace').decode('latin-1')
-                        pdf.multi_cell(0, 5, txt=txt_pdf)
-                        pdf_path = "informe.pdf"
-                        pdf.output(pdf_path)
-                        
-                        st.download_button("📥 Baixar Informe PDF", open(pdf_path, "rb"), file_name=f"ScopeAI_{archivo.name}.pdf")
-                    except Exception as pdf_e:
-                        st.error(f"Error generant PDF: {pdf_e}")
+                    # Generar PDF
+                    pdf = FPDF()
+                    pdf.add_page()
+                    pdf.set_font("Arial", size=10)
+                    clean_txt = res.text.encode('latin-1', 'replace').decode('latin-1')
+                    pdf.multi_cell(0, 5, txt=clean_txt)
+                    pdf_out = "informe.pdf"
+                    pdf.output(pdf_out)
+                    st.download_button("📥 Baixar Informe PDF", open(pdf_out, "rb"), file_name="ScopeAI_Informe.pdf")
 
-                    # --- REGISTRE I REFRESC ---
+                    # REGISTRE I BLOQUEIG
                     if pot_anar_gratis:
                         registrar_uso_gratis()
-                        st.success("Crèdit gratuït consumit. Refrescant sistema de quota...")
+                        st.success("Has gastat el teu crèdit gratuït. Refrescant...")
                         time.sleep(2)
-                        st.rerun() # Clau per bloquejar el proper intent
-                    
-                    st.session_state.history.append({"Hora": time.strftime("%H:%M"), "Estat": "OK"})
+                        st.rerun() # AIXÒ OBLIGA A RE-LLEGIR LA CUOTA I BLOQUEJAR
 
                 os.unlink(temp_path)
                 genai.delete_file(file_uploaded.name)
 
             except Exception as e:
-                st.error(f"Error crític: {str(e)}")
+                st.error(f"Error: {e}")
