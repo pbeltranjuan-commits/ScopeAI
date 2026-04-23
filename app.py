@@ -1,21 +1,3 @@
-from usuarios import gestionar_sesion, verificar_cuota, registrar_uso_gratis
-from pagos import mostrar_pago
-
-# 1. Forzar Login
-gestionar_sesion()
-
-# 2. En el botón de "EJECUTAR ANÁLISIS", pones esto:
-if st.button("EJECUTAR ANÁLISIS"):
-    tiene_gratis = verificar_cuota()
-    
-    if tiene_gratis:
-        # AQUÍ VA TU CÓDIGO DE ANÁLISIS...
-        registrar_uso_gratis() # Marcar que ya lo ha usado hoy
-    else:
-        # Si no tiene gratis, chequeamos pago
-        if mostrar_pago():
-             # AQUÍ VA TU CÓDIGO DE ANÁLISIS (Si ha pagado)...
-             pass
 import streamlit as st
 import google.generativeai as genai
 import pandas as pd
@@ -24,30 +6,33 @@ import time
 import os
 import tempfile
 
-# 1. CONFIGURACIÓ DE L'API
-genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-
-st.set_page_config(page_title="ScopeAI Ultimate", layout="wide", page_icon="💎")
-st.title("🏗️ ScopeAI Enterprise")
-
-# --- LOGIN ---
-if 'auth' not in st.session_state: st.session_state.auth = False
-if 'history' not in st.session_state: st.session_state.history = []
-
-if not st.session_state.auth:
-    col_l1, col_l2 = st.columns([1, 2])
-    with col_l1:
-        u = st.text_input("Usuari")
-        if st.button("Entrar"):
-            st.session_state.auth = True
-            st.rerun()
+# --- IMPORTACIONS DELS TEUS NOUS ARXIUS ---
+# Assegura't que tens els fitxers 'usuarios.py' i 'pagos.py' a la mateixa carpeta
+try:
+    from usuarios import gestionar_sesion, verificar_cuota, registrar_uso_gratis
+    from pagos import mostrar_pago
+except ImportError:
+    st.error("Error: No s'han trobat els fitxers 'usuarios.py' o 'pagos.py'. Puja'ls al teu GitHub.")
     st.stop()
 
-# --- CONFIGURACIÓ SIDEBAR (Amb selector de models i GPS) ---
+# 1. CONFIGURACIÓ DE L'API I PÀGINA
+genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+st.set_page_config(page_title="ScopeAI Ultimate", layout="wide", page_icon="💎")
+
+# --- SISTEMA DE SESSIÓ I LOGIN (Substitueix el teu login antic) ---
+gestionar_sesion() 
+
+st.title("🏗️ ScopeAI Enterprise")
+
+# Inicialitzar historial si no existeix
+if 'history' not in st.session_state: 
+    st.session_state.history = []
+
+# --- CONFIGURACIÓ SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Panell de Control")
+    st.write(f"👤 Usuari: **{st.session_state.get('user', 'Desconegut')}**")
     
-    # Millora: Selector de tots els models
     try:
         models_disponibles = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
     except:
@@ -63,7 +48,6 @@ with st.sidebar:
     c_hora = st.number_input("Preu Hora (€)", value=45.0)
     
     st.markdown("---")
-    # Millora: GPS i Urgència
     incloure_gps = st.checkbox("Capturar GPS", value=True)
     loc_actual = "📍 Carrer de la Riera, Mataró" if incloure_gps else "Ubicació Manual"
     st.caption(f"Localització: {loc_actual}")
@@ -71,7 +55,7 @@ with st.sidebar:
     es_urgent = st.toggle("🚨 Urgència 24h", value=False)
     p_final_visita = c_visita * 1.5 if es_urgent else c_visita
 
-# --- DASHBOARD (Millora acordada) ---
+# --- DASHBOARD ---
 if st.session_state.history:
     st.markdown("### 📊 Resum d'Activitat")
     df_h = pd.DataFrame(st.session_state.history)
@@ -84,7 +68,6 @@ if st.session_state.history:
 # --- ENTRADA DE DADES ---
 st.subheader("📸 Nova Inspecció")
 
-# Millora: Ajuda per a la gravació (Foto 1)
 with st.expander("🔦 AJUDA PER A LA GRAVACIÓ"):
     st.write("1. Flaix actiu. 2. Perspectiva de lluny a prop. 3. Descriu l'avaria parlant.")
 
@@ -97,73 +80,88 @@ with col_alert:
     if es_urgent: st.error("TARIFA D'URGÈNCIA ACTIVA")
     st.info(f"Model: {model_triat.split('/')[-1]}")
 
+# --- LÒGICA PRINCIPAL D'ANÀLISI AMB CONTROL DE PAGAMENT ---
 if archivo:
     st.success(f"Arxiu detectat: {archivo.name}")
     
     if st.button("🚀 EJECUTAR ANÀLISI COMPLETA"):
-        with st.status(f"Analitzant amb {model_triat}..."):
-            try:
-                suffix = os.path.splitext(archivo.name)[1]
-                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tfile:
-                    tfile.write(archivo.read())
-                    temp_path = tfile.name
+        # 1. Comprovem si té l'ús gratuït del dia
+        tiene_gratis = verificar_cuota()
+        pago_confirmado = False
+        
+        if not tiene_gratis:
+            # Si no té gratis, mostrem el botó de Stripe de l'arxiu pagos.py
+            pago_confirmado = mostrar_pago()
+        
+        # 2. Si té gratis O ha pagat, executem
+        if tiene_gratis or pago_confirmado:
+            with st.status(f"Analitzant amb {model_triat}..."):
+                try:
+                    suffix = os.path.splitext(archivo.name)[1]
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tfile:
+                        tfile.write(archivo.read())
+                        temp_path = tfile.name
 
-                file_uploaded = genai.upload_file(path=temp_path)
-                while file_uploaded.state.name == "PROCESSING":
-                    time.sleep(2)
-                    file_uploaded = genai.get_file(file_uploaded.name)
+                    file_uploaded = genai.upload_file(path=temp_path)
+                    while file_uploaded.state.name == "PROCESSING":
+                        time.sleep(2)
+                        file_uploaded = genai.get_file(file_uploaded.name)
 
-                model = genai.GenerativeModel(model_name=model_triat)
-                
-                # PROMPT FINAL: Inclou cerca externa i enllaços
-                prompt = f"""
-                ERES INGENIERO DE INSTALACIONES Y PERITO. 
-                UBICACIÓN: {loc_actual} | URGENCIA: {es_urgent}
-                DATOS TÉCNICOS: {notas}
-                INVENTARIO EXCEL: {inv_data}
-                COSTES: Visita {p_final_visita}€, Mano obra {c_hora}€/h.
-                
-                TAREA:
-                1. IA SAFETY SCAN: Avisa si hay peligro con "!!! ALERTA DE SEGURIDAD !!!".
-                2. DIAGNÓSTICO: Identifica materiales y daños mediante video/audio.
-                3. BÚSQUEDA DE MATERIALES (CRÍTICO): 
-                   - Si el material necesario NO está en el Inventario Excel, DEBES buscar en internet.
-                   - Proporciona el nombre del recambio y un ENLACE web (URL) real de compra o referencia.
-                4. PRESUPUESTO: Desglose con IVA 21%.
-                5. ESG: Calcula ahorro estimado de CO2.
-                6. RESPONDE EN CATALÀ.
-                """
-
-                respuesta = model.generate_content([prompt, file_uploaded])
-                
-                if respuesta.text:
-                    st.markdown("---")
-                    # Mostrar alerta de seguretat si n'hi ha
-                    if "!!!" in respuesta.text:
-                        st.warning(f"⚠️ {respuesta.text.split('!!!')[1]}")
+                    model = genai.GenerativeModel(model_name=model_triat)
                     
-                    st.markdown(respuesta.text)
+                    prompt = f"""
+                    ERES INGENIERO DE INSTALACIONES Y PERITO. 
+                    UBICACIÓN: {loc_actual} | URGENCIA: {es_urgent}
+                    DATOS TÉCNICOS: {notas}
+                    INVENTARIO EXCEL: {inv_data}
+                    COSTES: Visita {p_final_visita}€, Mano obra {c_hora}€/h.
                     
-                    # PDF i Registre
-                    t_pdf, t_reg = st.tabs(["📥 Baixar Informe", "💾 Registrar"])
-                    
-                    with t_pdf:
-                        pdf = FPDF()
-                        pdf.add_page()
-                        pdf.set_font("Arial", size=10)
-                        txt_pdf = respuesta.text.encode('latin-1', 'replace').decode('latin-1')
-                        pdf.multi_cell(0, 5, txt=txt_pdf)
-                        pdf.output("informe.pdf")
-                        with open("informe.pdf", "rb") as f:
-                            st.download_button("Descargar Informe PDF", f, file_name=f"ScopeAI_{archivo.name}.pdf")
-                    
-                    with t_reg:
-                        if st.button("Guardar al Dashboard"):
-                            st.session_state.history.append({"Hora": time.strftime("%H:%M"), "Estat": "OK"})
-                            st.success("Registrat correctament!")
+                    TAREA:
+                    1. IA SAFETY SCAN: Avisa si hay peligro con "!!! ALERTA DE SEGURIDAD !!!".
+                    2. DIAGNÓSTICO: Identifica materiales y daños mediante video/audio.
+                    3. BÚSQUEDA DE MATERIALES (CRÍTICO): 
+                       - Si el material necesario NO está en el Inventario Excel, DEBES buscar en internet.
+                       - Proporciona el nombre del recambio y un ENLACE web (URL) real de compra o referencia.
+                    4. PRESUPUESTO: Desglose con IVA 21%.
+                    5. ESG: Calcula ahorro estimado de CO2.
+                    6. RESPONDE EN CATALÀ.
+                    """
 
-                os.unlink(temp_path)
-                genai.delete_file(file_uploaded.name)
+                    respuesta = model.generate_content([prompt, file_uploaded])
+                    
+                    if respuesta.text:
+                        st.markdown("---")
+                        if "!!!" in respuesta.text:
+                            st.warning(f"⚠️ {respuesta.text.split('!!!')[1]}")
+                        
+                        st.markdown(respuesta.text)
+                        
+                        # Si s'ha fet servir l'ús gratuït, el registrem a la DB
+                        if tiene_gratis:
+                            registrar_uso_gratis()
+                        
+                        # Generació de PDF i Registre a l'historial
+                        t_pdf, t_reg = st.tabs(["📥 Baixar Informe", "💾 Registrar"])
+                        with t_pdf:
+                            pdf = FPDF()
+                            pdf.add_page()
+                            pdf.set_font("Arial", size=10)
+                            txt_pdf = respuesta.text.encode('latin-1', 'replace').decode('latin-1')
+                            pdf.multi_cell(0, 5, txt=txt_pdf)
+                            pdf.output("informe.pdf")
+                            with open("informe.pdf", "rb") as f:
+                                st.download_button("Descargar Informe PDF", f, file_name=f"ScopeAI_{archivo.name}.pdf")
+                        
+                        with t_reg:
+                            if st.button("Guardar al Dashboard"):
+                                st.session_state.history.append({"Hora": time.strftime("%H:%M"), "Estat": "OK"})
+                                st.success("Registrat correctament!")
 
-            except Exception as e:
-                st.error(f"Error crític: {str(e)}")
+                    os.unlink(temp_path)
+                    genai.delete_file(file_uploaded.name)
+
+                except Exception as e:
+                    st.error(f"Error crític: {str(e)}")
+        else:
+            # Si no té gratis i no ha marcat el check de pagament, no fem res més
+            st.info("S'ha d'efectuar el pagament per continuar amb més anàlisis avui.")
