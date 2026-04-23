@@ -1,3 +1,21 @@
+from usuarios import gestionar_sesion, verificar_cuota, registrar_uso_gratis
+from pagos import mostrar_pago
+
+# 1. Forzar Login
+gestionar_sesion()
+
+# 2. En el botón de "EJECUTAR ANÁLISIS", pones esto:
+if st.button("EJECUTAR ANÁLISIS"):
+    tiene_gratis = verificar_cuota()
+    
+    if tiene_gratis:
+        # AQUÍ VA TU CÓDIGO DE ANÁLISIS...
+        registrar_uso_gratis() # Marcar que ya lo ha usado hoy
+    else:
+        # Si no tiene gratis, chequeamos pago
+        if mostrar_pago():
+             # AQUÍ VA TU CÓDIGO DE ANÁLISIS (Si ha pagado)...
+             pass
 import streamlit as st
 import google.generativeai as genai
 import pandas as pd
