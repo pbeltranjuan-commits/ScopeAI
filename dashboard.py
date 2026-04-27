@@ -2,57 +2,49 @@ import streamlit as st
 import pandas as pd
 
 def mostrar_dashboard_premium(historial):
-    """Genera les targetes de resum a partir de les dades de SQL."""
+    """Genera les mètriques i el gràfic d'evolució des del SQL."""
     if not historial:
+        st.info("Esperant dades per generar estadístiques...")
         return
 
-    # Convertim l'historial (llista de dicts) en DataFrame
+    # 1. PREPARACIÓ DE DADES
     df = pd.DataFrame(historial)
+    
+    # Assegurem que el cost sigui numèric
+    col_cost = "Cost Estimats (€)"
+    if col_cost in df.columns:
+        df[col_cost] = pd.to_numeric(df[col_cost], errors='coerce').fillna(0)
+    else:
+        # Si la columna té un altre nom per error, la creem buida per no petar
+        df[col_cost] = 0.0
 
-    # 1. Càlcul de mètriques
+    # 2. CÀLCUL DE MÈTRIQUES
     total_inspeccions = len(df)
+    facturacio_total = df[col_cost].sum()
+    mitjana_ticket = facturacio_total / total_inspeccions if total_inspeccions > 0 else 0
     
-    # Sumem la columna de costos (ens assegurem que sigui numèrica)
-    try:
-        # El nom de la columna ha de coincidir amb el que retorna el SQL a base_dades.py
-        col_cost = "Cost Estimats (€)"
-        total_facturat = df[col_cost].astype(float).sum()
-    except:
-        total_facturat = 0.0
+    # 3. DISSENY DE TARGETES (KPIs)
+    st.markdown("### 📈 Panell de Rendiment")
+    c1, c2, c3 = st.columns(3)
+    
+    with c1:
+        st.metric(label="Inspeccions Totals", value=total_inspeccions, delta="Historial actiu")
+    with c2:
+        st.metric(label="Volum de Negoci", value=f"{facturacio_total:,.2f} €", delta="Estimació ROI")
+    with c3:
+        st.metric(label="Ticket Mitjà", value=f"{mitjana_ticket:,.2f} €")
 
-    # 2. Disseny visual amb columnes (Targetes)
-    st.markdown("### 📈 Resum d'Activitat")
+    # 4. GRÀFIC D'EVOLUCIÓ (L'historial visual)
+    st.markdown("#### 📅 Evolució de la Facturació")
     
-    m1, m2, m3 = st.columns(3)
+    # Invertim l'ordre per al gràfic (de més vell a més nou)
+    df_chart = df.iloc[::-1].reset_index()
     
-    with m1:
-        st.metric(
-            label="Total Inspeccions", 
-            value=total_inspeccions, 
-            delta="Memòria SQL Activa",
-            delta_color="normal"
-        )
-        
-    with m2:
-        st.metric(
-            label="Facturació Estimada", 
-            value=f"{total_facturat:,.2f} €",
-            delta="Dades Reals",
-            delta_color="normal"
-        )
-        
-    with m3:
-        # Càlcul de mitjana per inspecció
-        mitjana = total_facturat / total_inspeccions if total_inspeccions > 0 else 0
-        st.metric(
-            label="Mitjana per Treball", 
-            value=f"{mitjana:,.2f} €"
-        )
+    # Gràfic d'àrea professional
+    st.area_chart(df_chart[col_cost], use_container_width=True)
 
-    # 3. Gràfic ràpid d'evolució (Opcional)
-    if total_inspeccions > 1:
-        with st.expander("📊 Veure tendència"):
-            # Preparem dades pel gràfic
-            df_grafic = df.copy()
-            df_grafic = df_grafic.sort_index(ascending=False) # Invertim perquè el gràfic vagi d'esquerra a dreta
-            st.line_chart(df_grafic[col_cost])
+    # 5. DISTRIBUCIÓ PER TIPUS (Mecànica vs Elèctrica)
+    if "Tipus" in df.columns:
+        with st.expander("🔍 Veure distribució per avaria"):
+            distribucio = df["Tipus"].value_counts()
+            st.bar_chart(distribucio)
