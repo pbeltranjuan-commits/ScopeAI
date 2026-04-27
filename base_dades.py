@@ -1,28 +1,31 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 import pandas as pd
-from datetime import datetime
 
-def guardar_inspeccio_gsheets(usuari, tipus, cost):
-    """Guarda les dades en un Google Sheet compartit."""
+def carregar_historial_sql(usuari):
+    """Llegeix les últimes 20 inspeccions de la base de dades SQL."""
     try:
-        conn = st.connection("gsheets", type=GSheetsConnection)
+        # Utilitza la connexió 'postgresql' que hem configurat als Secrets
+        conn = st.connection("postgresql", type="sql")
         
-        # Llegim les dades actuals
-        existing_data = conn.read(worksheet="Logs", ttl=0)
+        # Fem la consulta a la taula que vas crear a Supabase
+        query = f"SELECT data, hora, tipus, cost_estimat FROM inspeccions WHERE usuari = '{usuari}' ORDER BY id DESC LIMIT 20;"
+        df = conn.query(query, ttl=0) # ttl=0 per tenir dades fresques sempre
         
-        # Creem la nova fila
-        nova_fila = pd.DataFrame([{
-            "Data": datetime.now().strftime("%d/%m/%Y %H:%M"),
-            "Usuari": usuari,
-            "Tipus": tipus,
-            "Cost Estimats (€)": cost
-        }])
-        
-        # Combinem i actualitzem
-        updated_df = pd.concat([existing_data, nova_fila], ignore_index=True)
-        conn.update(worksheet="Logs", data=updated_df)
+        return df.to_dict('records')
+    except Exception as e:
+        # Si falla, retornem una llista buida perquè l'app no es trenqui
+        return []
+
+def guardar_inspeccio_sql(usuari, tipus, cost):
+    """Guarda una nova inspecció a la base de dades eterna de Supabase."""
+    try:
+        conn = st.connection("postgresql", type="sql")
+        with conn.session as s:
+            # Preparem la inserció de dades
+            query = "INSERT INTO inspeccions (usuari, tipus, cost_estimat) VALUES (:u, :t, :c);"
+            s.execute(query, {"u": usuari, "t": tipus, "c": cost})
+            s.commit()
         return True
     except Exception as e:
-        st.error(f"Error de connexió amb la base de dades: {e}")
+        st.error(f"❌ Error crític al guardar a SQL: {e}")
         return False
