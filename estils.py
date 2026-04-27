@@ -1,117 +1,80 @@
 import streamlit as st
 
 def aplicar_estils_personalitzats():
+    # Injecció forçada: això "mata" qualsevol disseny previ de Streamlit
     st.markdown("""
         <style>
-        /* 1. IMPORTACIÓ DE FONT PROFESSIONALS */
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        /* 1. ELIMINAR EL COLOR LILA/BLAU PER DEFECTE */
+        :root {
+            --primary-color: #18181B;
+        }
+
+        /* 2. FONS DE PÀGINA NET (Estil Apple) */
+        .stApp {
+            background-color: #F8FAFC !important;
+        }
+
+        /* 3. SIDEBAR NEGRE OLED (Aquest és el canvi més gran) */
+        [data-testid="stSidebar"] {
+            background-color: #09090B !important;
+            border-right: 1px solid #E2E8F0 !important;
+            min-width: 300px !important;
+        }
         
-        /* 2. CONFIGURACIÓ BASE (Neteja total) */
-        html, body, [class*="css"] {
+        /* Forçar text blanc a la sidebar */
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+        [data-testid="stSidebar"] label,
+        [data-testid="stSidebar"] span {
+            color: #FAFAFA !important;
             font-family: 'Inter', sans-serif !important;
         }
 
-        .stApp {
-            background-color: #F8FAFC !important; /* Gris ultra-clar tipus SaaS */
+        /* 4. TARGETES BLANQUES (Mètriques) */
+        [data-testid="stMetric"] {
+            background-color: #FFFFFF !important;
+            border: 1px solid #E2E8F0 !important;
+            border-radius: 12px !important;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05) !important;
+            padding: 20px !important;
         }
 
-        /* 3. SIDEBAR: NEGRE OLED INDUSTRIAL (Premium) */
-        [data-testid="stSidebar"] {
-            background-color: #09090B !important;
-            border-right: 1px solid #E2E8F0;
-        }
-        
-        /* Forçar color de text a la sidebar */
-        [data-testid="stSidebar"] * {
-            color: #FAFAFA !important;
-        }
-        
-        /* Inputs de la sidebar més elegants */
-        [data-testid="stSidebar"] .stNumberInput input, 
-        [data-testid="stSidebar"] .stSelectbox div {
+        /* 5. BOTÓ NEGRE MINIMALISTA */
+        div.stButton > button {
             background-color: #18181B !important;
-            border: 1px solid #27272A !important;
             color: white !important;
             border-radius: 8px !important;
-        }
-
-        /* 4. BOTÓ D'ACCIÓ: ESTIL APPLE / STRIPE */
-        div.stButton > button {
-            background-color: #18181B !important; /* Negre pur */
-            color: white !important;
-            border: none !important;
-            border-radius: 10px !important;
-            padding: 16px 24px !important;
+            border: 1px solid #18181B !important;
+            padding: 12px 24px !important;
             font-weight: 600 !important;
-            font-size: 16px !important;
-            letter-spacing: -0.02em;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
             width: 100% !important;
-            margin-top: 20px;
+            transition: all 0.2s ease !important;
         }
 
         div.stButton > button:hover {
-            background-color: #27272A !important;
+            background-color: #3F3F46 !important;
+            border-color: #3F3F46 !important;
             transform: translateY(-1px);
-            box-shadow: 0 10px 20px rgba(0,0,0,0.15) !important;
         }
 
-        /* 5. TARGETA DE RESULTATS: "THE REPORT SHEET" */
-        .premium-report {
-            background-color: #FFFFFF !important;
-            padding: 45px !important;
-            border-radius: 24px !important;
+        /* 6. CAIXA D'INFORME (Efecte Full de Paper) */
+        .premium-card {
+            background: white !important;
+            padding: 35px !important;
+            border-radius: 16px !important;
             border: 1px solid #E2E8F0 !important;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.05) !important;
-            margin-top: 40px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.03) !important;
+            margin-top: 25px;
             color: #18181B !important;
         }
-
-        .premium-report h2 {
-            color: #18181B !important;
-            font-size: 28px !important;
-            font-weight: 700 !important;
-            letter-spacing: -0.05em !important;
-            border-bottom: 2px solid #F1F5F9;
-            padding-bottom: 15px;
-            margin-bottom: 25px;
-        }
-
-        /* 6. MÈTRIQUES (Dashboard nítid) */
-        [data-testid="stMetric"] {
-            background-color: white !important;
-            border: 1px solid #F1F5F9 !important;
-            padding: 20px !important;
-            border-radius: 16px !important;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.02) !important;
-        }
-
-        /* 7. TEXT AREA I UPLOADER (Sense lila) */
-        .stTextArea textarea {
-            border-radius: 12px !important;
-            border: 1px solid #E2E8F0 !important;
-            padding: 15px !important;
-        }
-        
-        .stFileUploader section {
-            border-radius: 16px !important;
-            border: 2px dashed #CBD5E1 !important;
-            background-color: #FFFFFF !important;
-        }
-
-        /* Amagar el menú superior de Streamlit per més neteja */
-        #MainMenu {visibility: hidden;}
-        header {visibility: hidden;}
-        footer {visibility: hidden;}
         </style>
     """, unsafe_allow_html=True)
 
 def caixa_analisi(titol, icona, contingut):
     st.markdown(f"""
-        <div class="premium-report">
-            <h2>{icona} {titol}</h2>
-            <div style="font-size: 16px; line-height: 1.8; color: #3F3F46;">
+        <div class="premium-card">
+            <h2 style="color: #18181B; margin-top: 0; font-weight: 700;">{icona} {titol}</h2>
+            <hr style="border: 0; border-top: 1px solid #F1F5F9; margin: 15px 0;">
+            <div style="font-size: 16px; line-height: 1.7; color: #4B5563;">
                 {contingut}
             </div>
         </div>
