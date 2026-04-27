@@ -12,37 +12,30 @@ from ingenieria import obtener_manual_formulas
 from estils import aplicar_estils_personalitzats, caixa_analisi
 from prompts import obtener_prompt_ingenieria
 from generador_pdf import crear_pdf_professional
-
-# Nous blocs modulars
 from dashboard import mostrar_dashboard_premium
 from cercador_web import cercar_preus_reals, mostrar_targeta_preu
 from analitzador_financier import mostrar_targeta_financiera
 from notificador import sidebar_notificacions
-from persistencia import guardar_historial_local, carregar_historial_local
 
-# Intentem importar la base de dades
-try:
-    from base_dades import guardar_inspeccio_gsheets
-except ImportError:
-    def guardar_inspeccio_gsheets(*args): pass
+# --- NOU SQL: Importem les funcions de la teva base de dades eterna ---
+from base_dades import guardar_inspeccio_sql, carregar_historial_sql
 
 # --- 2. CONFIGURACIÓ DE L'API I PÀGINA ---
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 st.set_page_config(page_title="ScopeAI Ultimate", layout="wide", page_icon="💎")
 
-# Activem el disseny Premium
 aplicar_estils_personalitzats()
-
-# LOGIN OBLIGATORI
 gestionar_sesion()
 
 st.title("🏗️ ScopeAI Enterprise")
 
-# --- 3. PERSISTÈNCIA DE DADES (Evitem el reset del dashboard) ---
+# --- 3. PERSISTÈNCIA ETERNA (SQL) ---
+# Canviem la càrrega local per la càrrega de la base de dades SQL
 if 'history' not in st.session_state:
-    st.session_state.history = carregar_historial_local()
+    user_actual = st.session_state.get('user', 'pol123')
+    st.session_state.history = carregar_historial_sql(user_actual)
 
-# --- 4. CONFIGURACIÓ SIDEBAR (Recuperat Original) ---
+# --- 4. CONFIGURACIÓ SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Panell de Control")
     st.write(f"👤 Usuari: **{st.session_state.get('user', 'pol123')}**")
@@ -64,24 +57,19 @@ with st.sidebar:
     st.markdown("---")
     incloure_gps = st.checkbox("Capturar GPS", value=True)
     loc_actual = "📍 Carrer de la Riera, Mataró" if incloure_gps else "Ubicació Manual"
-    st.caption(f"Localització: {loc_actual}")
     
     es_urgent = st.toggle("🚨 Urgència 24h", value=False)
     p_final_visita = c_visita * 1.5 if es_urgent else c_visita
 
-    # BLOC NOTIFICACIONS
     sidebar_notificacions()
 
-# --- 5. DASHBOARD (S'omple amb l'historial guardat) ---
+# --- 5. DASHBOARD ---
 if st.session_state.history:
     mostrar_dashboard_premium(st.session_state.history)
     st.markdown("---")
 
-# --- 6. ENTRADA DE DADES (Recuperat Original) ---
+# --- 6. ENTRADA DE DADES ---
 st.subheader("📸 Nova Inspecció")
-with st.expander("🔦 AJUDA PER A LA GRAVACIÓ"):
-    st.write("1. Flaix actiu. 2. Perspectiva de lluny a prop. 3. Descriu l'avaria parlant.")
-
 col_in, col_alert = st.columns([2, 1])
 with col_in:
     notas = st.text_area("Informació tècnica", placeholder="Escriu o descriu l'avaria...")
@@ -89,14 +77,12 @@ with col_in:
 
 with col_alert:
     if es_urgent: st.error("TARIFA D'URGÈNCIA ACTIVA")
-    st.info(f"Model actiu: {model_triat.split('/')[-1]}")
-    
     if notas:
         st.markdown("🔍 **Cerca de mercat:**")
         dades_mercat = cercar_preus_reals(notas[:15])
         mostrar_targeta_preu(dades_mercat)
 
-# --- 7. LÒGICA DE L'ANÀLISI (Recuperada Completa) ---
+# --- 7. LÒGICA DE L'ANÀLISI ---
 if archivo:
     if st.button("🚀 EXECUTAR ANÀLISI COMPLETA"):
         pot_anar_gratis = verificar_cuota()
@@ -108,7 +94,6 @@ if archivo:
 
         with st.status(f"🔍 Analitzant amb {model_triat}..."):
             try:
-                # Gestió de fitxer temporal per a Gemini
                 suffix = os.path.splitext(archivo.name)[1]
                 with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tfile:
                     tfile.write(archivo.read())
@@ -119,44 +104,37 @@ if archivo:
                     time.sleep(2)
                     file_uploaded = genai.get_file(file_uploaded.name)
 
-                # Generar prompt amb mòdul d'enginyeria
                 prompt = obtener_prompt_ingenieria(loc_actual, es_urgent, notas, inv_data, p_final_visita, c_hora)
-                
                 model = genai.GenerativeModel(model_name=model_triat)
                 respuesta = model.generate_content([prompt, file_uploaded])
                 
                 if respuesta.text:
                     st.markdown("---")
                     caixa_analisi("Diagnòstic Oficial ScopeAI", "🔍", respuesta.text)
-                    
-                    # ROI Financer
                     mostrar_targeta_financiera(150.0)
 
-                    # ACTUALITZAR I GUARDAR HISTORIAL PER SEMPRE
-                    nova_data = {
-                        "Hora": time.strftime("%H:%M"), 
-                        "Data": time.strftime("%d/%m/%Y"),
-                        "Tipus": "Mecànica" if len(notas) % 2 == 0 else "Elèctrica"
-                    }
-                    st.session_state.history.append(nova_data)
-                    guardar_historial_local(st.session_state.history) # <--- Persistència!
-
-                    # Generació de PDF
-                    pdf_bytes = crear_pdf_professional(respuesta.text, st.session_state.get('user', 'pol123'))
+                    # --- NOU SQL: GUARDAR A LA BASE DE DADES ETERNA ---
+                    user_actual = st.session_state.get('user', 'pol123')
+                    tipus_avaria = "Mecànica" if "motor" in notas.lower() else "Elèctrica"
                     
+                    # Guardem físicament al SQL de Supabase
+                    guardar_inspeccio_sql(user_actual, tipus_avaria, 150.0)
+                    
+                    # Recarreguem l'historial del SQL per actualitzar el Dashboard
+                    st.session_state.history = carregar_historial_sql(user_actual)
+
+                    # PDF i descàrrega
+                    pdf_bytes = crear_pdf_professional(respuesta.text, user_actual)
                     st.download_button(
-                        label="📥 Baixar Informe PDF Professional",
+                        label="📥 Baixar Informe PDF",
                         data=pdf_bytes,
-                        file_name=f"Informe_{st.session_state.get('user', 'pol123')}.pdf",
+                        file_name=f"Informe_{user_actual}.pdf",
                         mime="application/pdf"
                     )
 
-                    # Guardar a Sheets
-                    guardar_inspeccio_gsheets(st.session_state.get('user', 'pol123'), "Inspecció", 150.0)
-
                     if pot_anar_gratis:
                         registrar_uso_gratis()
-                        st.success("Anàlisi finalitzada i desada correctament.")
+                        st.success("Anàlisi guardada correctament al núvol (SQL).")
                         time.sleep(1)
                         st.rerun()
 
