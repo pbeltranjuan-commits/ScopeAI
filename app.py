@@ -10,10 +10,15 @@ import tempfile
 from usuarios import gestionar_sesion, verificar_cuota, registrar_uso_gratis
 from pagos import mostrar_pago
 from ingenieria import obtener_manual_formulas
+# AFEGIM LA CONNEXIÓ AMB ELS ESTILS
+from estils import aplicar_estils_personalitzats, caixa_analisi
 
 # CONFIGURACIÓ
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 st.set_page_config(page_title="ScopeAI Ultimate", layout="wide", page_icon="💎")
+
+# CRIDEM ELS ESTILS PER PINTAR LA WEB
+aplicar_estils_personalitzats()
 
 # LOGIN
 gestionar_sesion()
@@ -118,7 +123,8 @@ if archivo:
                 
                 if res.text:
                     st.markdown("---")
-                    st.markdown(res.text)
+                    # FEM SERVIR LA CAIXA D'ANÀLISI CURRADA PER AL RESULTAT
+                    caixa_analisi("Diagnòstic d'Enginyeria", "🔍", res.text)
                     
                     # Generar PDF
                     pdf = FPDF()
@@ -135,7 +141,7 @@ if archivo:
                         registrar_uso_gratis()
                         st.success("Has gastat el teu crèdit gratuït. Refrescant...")
                         time.sleep(2)
-                        st.rerun() # AIXÒ OBLIGA A RE-LLEGIR LA CUOTA I BLOQUEJAR
+                        st.rerun() 
 
                 os.unlink(temp_path)
                 genai.delete_file(file_uploaded.name)
