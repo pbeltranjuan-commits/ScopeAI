@@ -2,49 +2,57 @@ import streamlit as st
 import pandas as pd
 
 def mostrar_dashboard_premium(historial):
+    """Genera les targetes de resum a partir de les dades de SQL."""
     if not historial:
-        st.info("📊 Encara no hi ha dades per mostrar al Dashboard.")
         return
 
-    # Convertim l'historial en un DataFrame per treballar millor
+    # Convertim l'historial (llista de dicts) en DataFrame
     df = pd.DataFrame(historial)
 
-    # --- MÈTRIQUES DE CAPÇALERA ---
-    st.markdown("### 📈 Rendiment Operatiu")
-    c1, c2, c3, c4 = st.columns(4)
+    # 1. Càlcul de mètriques
+    total_inspeccions = len(df)
     
-    with c1:
-        st.metric("Total Inspeccions", len(df))
-    with c2:
-        # Calculem estalvi estimat de CO2 (ex: 1.2kg per inspecció evitada)
-        total_co2 = len(df) * 1.2
-        st.metric("Estalvi CO2", f"{total_co2:.1f} kg", delta="♻️ Sostenible")
-    with c3:
-        # Simulació de temps estalviat
-        temps_total = len(df) * 45 # 45 minuts per cada una
-        st.metric("Temps Guanyat", f"{temps_total//60}h {temps_total%60}m")
-    with c4:
-        st.metric("Estat Flota", "🟢 100%", delta="OPTIMAL")
+    # Sumem la columna de costos (ens assegurem que sigui numèrica)
+    try:
+        # El nom de la columna ha de coincidir amb el que retorna el SQL a base_dades.py
+        col_cost = "Cost Estimats (€)"
+        total_facturat = df[col_cost].astype(float).sum()
+    except:
+        total_facturat = 0.0
 
-    st.markdown("---")
+    # 2. Disseny visual amb columnes (Targetes)
+    st.markdown("### 📈 Resum d'Activitat")
+    
+    m1, m2, m3 = st.columns(3)
+    
+    with m1:
+        st.metric(
+            label="Total Inspeccions", 
+            value=total_inspeccions, 
+            delta="Memòria SQL Activa",
+            delta_color="normal"
+        )
+        
+    with m2:
+        st.metric(
+            label="Facturació Estimada", 
+            value=f"{total_facturat:,.2f} €",
+            delta="Dades Reals",
+            delta_color="normal"
+        )
+        
+    with m3:
+        # Càlcul de mitjana per inspecció
+        mitjana = total_facturat / total_inspeccions if total_inspeccions > 0 else 0
+        st.metric(
+            label="Mitjana per Treball", 
+            value=f"{mitjana:,.2f} €"
+        )
 
-    # --- GRÀFIQUES MODULARS ---
-    col_left, col_right = st.columns(2)
-
-    with col_left:
-        st.write("**EVOLUCIÓ DE COSTOS (€)**")
-        # Gràfica lineal simple (Streamlit native per mantenir el look clean)
-        chart_data = pd.DataFrame({
-            "Inspecció": range(1, len(df) + 1),
-            "Cost Estimat": [150, 220, 180, 250, 210][:len(df)] # Exemple
-        })
-        st.line_chart(chart_data.set_index("Inspecció"), color="#18181B")
-
-    with col_right:
-        st.write("**DISTRIBUCIÓ D'AVARIES**")
-        # Gràfica de barres de tipus d'avaria
-        tipus_data = pd.DataFrame({
-            "Tipus": ["Elèctrica", "Mecànica", "Estructura", "Altres"],
-            "Casos": [5, 3, 2, 1]
-        })
-        st.bar_chart(tipus_data.set_index("Tipus"), color="#3F3F46")
+    # 3. Gràfic ràpid d'evolució (Opcional)
+    if total_inspeccions > 1:
+        with st.expander("📊 Veure tendència"):
+            # Preparem dades pel gràfic
+            df_grafic = df.copy()
+            df_grafic = df_grafic.sort_index(ascending=False) # Invertim perquè el gràfic vagi d'esquerra a dreta
+            st.line_chart(df_grafic[col_cost])
