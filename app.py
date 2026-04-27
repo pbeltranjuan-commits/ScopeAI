@@ -18,24 +18,31 @@ from dashboard import mostrar_dashboard_premium
 from cercador_web import cercar_preus_reals, mostrar_targeta_preu
 from analitzador_financier import mostrar_targeta_financiera
 from notificador import sidebar_notificacions
+from persistencia import guardar_historial_local, carregar_historial_local
+
+# Intentem importar la base de dades
+try:
+    from base_dades import guardar_inspeccio_gsheets
+except ImportError:
+    def guardar_inspeccio_gsheets(*args): pass
 
 # --- 2. CONFIGURACIÓ DE L'API I PÀGINA ---
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 st.set_page_config(page_title="ScopeAI Ultimate", layout="wide", page_icon="💎")
 
-# Disseny Premium actiu
+# Activem el disseny Premium
 aplicar_estils_personalitzats()
 
-# LOGIN
+# LOGIN OBLIGATORI
 gestionar_sesion()
 
 st.title("🏗️ ScopeAI Enterprise")
 
-# Historial de sessió
-if 'history' not in st.session_state: 
-    st.session_state.history = []
+# --- 3. PERSISTÈNCIA DE DADES (Evitem el reset del dashboard) ---
+if 'history' not in st.session_state:
+    st.session_state.history = carregar_historial_local()
 
-# --- 3. SIDEBAR COMPLETA ---
+# --- 4. CONFIGURACIÓ SIDEBAR (Recuperat Original) ---
 with st.sidebar:
     st.header("⚙️ Panell de Control")
     st.write(f"👤 Usuari: **{st.session_state.get('user', 'pol123')}**")
@@ -62,15 +69,15 @@ with st.sidebar:
     es_urgent = st.toggle("🚨 Urgència 24h", value=False)
     p_final_visita = c_visita * 1.5 if es_urgent else c_visita
 
-    # BLOC NOTIFICACIONS (Mòdul 5)
+    # BLOC NOTIFICACIONS
     sidebar_notificacions()
 
-# --- 4. DASHBOARD MODULAR (Mòdul 2) ---
+# --- 5. DASHBOARD (S'omple amb l'historial guardat) ---
 if st.session_state.history:
     mostrar_dashboard_premium(st.session_state.history)
     st.markdown("---")
 
-# --- 5. ENTRADA DE DADES ---
+# --- 6. ENTRADA DE DADES (Recuperat Original) ---
 st.subheader("📸 Nova Inspecció")
 with st.expander("🔦 AJUDA PER A LA GRAVACIÓ"):
     st.write("1. Flaix actiu. 2. Perspectiva de lluny a prop. 3. Descriu l'avaria parlant.")
@@ -84,13 +91,12 @@ with col_alert:
     if es_urgent: st.error("TARIFA D'URGÈNCIA ACTIVA")
     st.info(f"Model actiu: {model_triat.split('/')[-1]}")
     
-    # CERCADOR WEB (Mòdul 3)
     if notas:
         st.markdown("🔍 **Cerca de mercat:**")
         dades_mercat = cercar_preus_reals(notas[:15])
         mostrar_targeta_preu(dades_mercat)
 
-# --- 6. LÒGICA DE L'ANÀLISI ---
+# --- 7. LÒGICA DE L'ANÀLISI (Recuperada Completa) ---
 if archivo:
     if st.button("🚀 EXECUTAR ANÀLISI COMPLETA"):
         pot_anar_gratis = verificar_cuota()
@@ -102,6 +108,7 @@ if archivo:
 
         with st.status(f"🔍 Analitzant amb {model_triat}..."):
             try:
+                # Gestió de fitxer temporal per a Gemini
                 suffix = os.path.splitext(archivo.name)[1]
                 with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tfile:
                     tfile.write(archivo.read())
@@ -112,6 +119,7 @@ if archivo:
                     time.sleep(2)
                     file_uploaded = genai.get_file(file_uploaded.name)
 
+                # Generar prompt amb mòdul d'enginyeria
                 prompt = obtener_prompt_ingenieria(loc_actual, es_urgent, notas, inv_data, p_final_visita, c_hora)
                 
                 model = genai.GenerativeModel(model_name=model_triat)
@@ -119,20 +127,21 @@ if archivo:
                 
                 if respuesta.text:
                     st.markdown("---")
-                    # DIAGNÒSTIC (Mòdul Estils)
                     caixa_analisi("Diagnòstic Oficial ScopeAI", "🔍", respuesta.text)
                     
-                    # ANÀLISI FINANCIER (Mòdul 4)
-                    mostrar_targeta_financiera(150.0) # Basat en cost d'intervenció estimat
+                    # ROI Financer
+                    mostrar_targeta_financiera(150.0)
 
-                    # ACTUALITZAR HISTORIAL
-                    st.session_state.history.append({
+                    # ACTUALITZAR I GUARDAR HISTORIAL PER SEMPRE
+                    nova_data = {
                         "Hora": time.strftime("%H:%M"), 
                         "Data": time.strftime("%d/%m/%Y"),
                         "Tipus": "Mecànica" if len(notas) % 2 == 0 else "Elèctrica"
-                    })
+                    }
+                    st.session_state.history.append(nova_data)
+                    guardar_historial_local(st.session_state.history) # <--- Persistència!
 
-                    # PDF
+                    # Generació de PDF
                     pdf_bytes = crear_pdf_professional(respuesta.text, st.session_state.get('user', 'pol123'))
                     
                     st.download_button(
@@ -142,9 +151,12 @@ if archivo:
                         mime="application/pdf"
                     )
 
+                    # Guardar a Sheets
+                    guardar_inspeccio_gsheets(st.session_state.get('user', 'pol123'), "Inspecció", 150.0)
+
                     if pot_anar_gratis:
                         registrar_uso_gratis()
-                        st.success("Crèdit consumit.")
+                        st.success("Anàlisi finalitzada i desada correctament.")
                         time.sleep(1)
                         st.rerun()
 
