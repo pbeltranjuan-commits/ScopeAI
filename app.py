@@ -13,34 +13,34 @@ from estils import aplicar_estils_personalitzats, caixa_analisi
 from prompts import obtener_prompt_ingenieria
 from generador_pdf import crear_pdf_professional
 
-# Blocs modulars visuals
+# Blocs modulars visuals (ELS QUE HAN DE SORTIR)
 from dashboard import mostrar_dashboard_premium
 from cercador_web import cercar_preus_reals, mostrar_targeta_preu
 from analitzador_financier import mostrar_targeta_financiera
 from notificador import sidebar_notificacions
 
-# --- NOU: PERSISTÈNCIA SQL ---
+# PERSISTÈNCIA SQL
 from base_dades import guardar_inspeccio_sql, carregar_historial_sql
 
-# --- 2. CONFIGURACIÓ DE L'API I PÀGINA ---
+# --- 2. CONFIGURACIÓ ---
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 st.set_page_config(page_title="ScopeAI Ultimate", layout="wide", page_icon="💎")
-
-# Activem el disseny Premium
 aplicar_estils_personalitzats()
-
-# LOGIN OBLIGATORI
 gestionar_sesion()
 
 st.title("🏗️ ScopeAI Enterprise")
 
-# --- 3. PERSISTÈNCIA DE DADES (Recuperem de SQL) ---
+# --- 3. DASHBOARD (DADES DES DE SQL) ---
 user_actual = st.session_state.get('user', 'pol123')
 if 'history' not in st.session_state:
-    # Ara l'historial ve de Supabase, no es perd mai!
     st.session_state.history = carregar_historial_sql(user_actual)
 
-# --- 4. CONFIGURACIÓ SIDEBAR (Recuperat 100%) ---
+# AQUÍ S'EXECUTA EL DASHBOARD (A sobre de tot)
+if st.session_state.history:
+    mostrar_dashboard_premium(st.session_state.history)
+st.markdown("---")
+
+# --- 4. SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Panell de Control")
     st.write(f"👤 Usuari: **{user_actual}**")
@@ -62,20 +62,13 @@ with st.sidebar:
     st.markdown("---")
     incloure_gps = st.checkbox("Capturar GPS", value=True)
     loc_actual = "📍 Carrer de la Riera, Mataró" if incloure_gps else "Ubicació Manual"
-    st.caption(f"Localització: {loc_actual}")
     
     es_urgent = st.toggle("🚨 Urgència 24h", value=False)
     p_final_visita = c_visita * 1.5 if es_urgent else c_visita
 
-    # BLOC NOTIFICACIONS
     sidebar_notificacions()
 
-# --- 5. DASHBOARD (Carregat des de SQL) ---
-if st.session_state.history:
-    mostrar_dashboard_premium(st.session_state.history)
-    st.markdown("---")
-
-# --- 6. ENTRADA DE DADES (Recuperat Completa) ---
+# --- 5. ENTRADA DE DADES ---
 st.subheader("📸 Nova Inspecció")
 with st.expander("🔦 AJUDA PER A LA GRAVACIÓ"):
     st.write("1. Flaix actiu. 2. Perspectiva de lluny a prop. 3. Descriu l'avaria parlant.")
@@ -87,26 +80,23 @@ with col_in:
 
 with col_alert:
     if es_urgent: st.error("TARIFA D'URGÈNCIA ACTIVA")
-    st.info(f"Model actiu: {model_triat.split('/')[-1]}")
     
+    # AQUÍ S'EXECUTA EL CERCADOR WEB (Mentre escrius)
     if notas:
         st.markdown("🔍 **Cerca de mercat:**")
         dades_mercat = cercar_preus_reals(notas[:15])
         mostrar_targeta_preu(dades_mercat)
 
-# --- 7. LÒGICA DE L'ANÀLISI (Recuperada línia a línia) ---
+# --- 6. LÒGICA DE L'ANÀLISI ---
 if archivo:
     if st.button("🚀 EXECUTAR ANÀLISI COMPLETA"):
         pot_anar_gratis = verificar_cuota()
-        
         if not pot_anar_gratis:
             if not mostrar_pago():
-                st.warning("🔒 Operació bloquejada. Superat el límit diari.")
                 st.stop()
 
-        with st.status(f"🔍 Analitzant amb {model_triat}..."):
+        with st.status("🔍 Analitzant..."):
             try:
-                # Gestió de fitxer temporal per a Gemini
                 suffix = os.path.splitext(archivo.name)[1]
                 with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tfile:
                     tfile.write(archivo.read())
@@ -117,9 +107,7 @@ if archivo:
                     time.sleep(2)
                     file_uploaded = genai.get_file(file_uploaded.name)
 
-                # Generar prompt amb mòdul d'enginyeria
                 prompt = obtener_prompt_ingenieria(loc_actual, es_urgent, notas, inv_data, p_final_visita, c_hora)
-                
                 model = genai.GenerativeModel(model_name=model_triat)
                 respuesta = model.generate_content([prompt, file_uploaded])
                 
@@ -127,34 +115,26 @@ if archivo:
                     st.markdown("---")
                     caixa_analisi("Diagnòstic Oficial ScopeAI", "🔍", respuesta.text)
                     
-                    # ROI Financer
+                    # AQUÍ S'EXECUTA EL ROI FINANCER
                     mostrar_targeta_financiera(150.0)
 
-                    # --- GUARDAR A SQL (Sustitueix el guardat local i Sheets) ---
-                    tipus_detectat = "Mecànica" if "motor" in notas.lower() else "Elèctrica"
-                    guardar_inspeccio_sql(user_actual, tipus_detectat, 150.0)
+                    # GUARDAT SQL
+                    tipus_avaria = "Mecànica" if "motor" in notas.lower() else "Elèctrica"
+                    guardar_inspeccio_sql(user_actual, tipus_avaria, 150.0)
                     
-                    # Recarreguem de SQL per actualitzar Dashboard immediatament
+                    # Actualitzem el Dashboard
                     st.session_state.history = carregar_historial_sql(user_actual)
 
-                    # Generació de PDF
+                    # PDF i Descàrrega
                     pdf_bytes = crear_pdf_professional(respuesta.text, user_actual)
-                    
-                    st.download_button(
-                        label="📥 Baixar Informe PDF Professional",
-                        data=pdf_bytes,
-                        file_name=f"Informe_{user_actual}.pdf",
-                        mime="application/pdf"
-                    )
+                    st.download_button(label="📥 Baixar Informe PDF", data=pdf_bytes, file_name=f"Inf_{user_actual}.pdf")
 
                     if pot_anar_gratis:
                         registrar_uso_gratis()
-                        st.success("Anàlisi finalitzada i desada a la base de dades SQL.")
+                        st.success("Anàlisi guardada correctament.")
                         time.sleep(1)
                         st.rerun()
 
                 os.unlink(temp_path)
-                genai.delete_file(file_uploaded.name)
-
             except Exception as e:
-                st.error(f"Error crític: {str(e)}")
+                st.error(f"Error: {e}")
