@@ -5,53 +5,59 @@ import time
 import os
 import tempfile
 
-# --- 1. IMPORTACIONS SEGURES ---
+# --- 1. IMPORTACIONS (Si no troba el fitxer, no peta) ---
 from estils import aplicar_estils_personalitzats, caixa_analisi
-from prompts import obtener_prompt_ingenieria
-from generador_pdf import crear_pdf_professional
-
-# Intentem importar la base de dades, si no existeix, creem una funció buida per no trencar l'app
 try:
-    from base_dades import guardar_inspeccio_gsheets
+    from prompts import obtener_prompt_ingenieria
+    from generador_pdf import crear_pdf_professional
 except ImportError:
-    def guardar_inspeccio_gsheets(*args): pass
+    st.error("⚠️ Falten fitxers a GitHub! Recorda pujar 'prompts.py' i 'generador_pdf.py'")
 
-# --- 2. CONFIGURACIÓ ---
+# --- 2. CONFIGURACIÓ ORIGINAL RECONSTRUÏDA ---
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 st.set_page_config(page_title="ScopeAI Enterprise", layout="wide", page_icon="🏗️")
 aplicar_estils_personalitzats()
 
 st.title("🏗️ ScopeAI Enterprise")
 
-# --- 3. SIDEBAR ---
+# --- 3. SIDEBAR (Tot el que tenies abans) ---
 with st.sidebar:
     st.header("⚙️ Panell de Control")
-    # Si no tens usuarios.py, posem un usuari per defecte
-    usuari_actual = st.session_state.get('user', 'Tècnic_Demo')
-    st.write(f"👤 Usuari: **{usuari_actual}**")
+    st.write(f"👤 Usuari: **{st.session_state.get('user', 'Usuari')}**")
     
-    model_triat = st.selectbox("🧠 Model", ["gemini-1.5-flash", "gemini-1.5-pro"])
+    # Models de Gemini (Com a la teva imatge e5cc50.png)
+    model_triat = st.selectbox("🧠 Model de Gemini", ["gemini-1.5-flash", "gemini-1.5-pro"])
+    
     st.markdown("---")
+    # Gestió de l'inventari Excel
+    ex = st.file_uploader("📦 Inventari (Excel)", type=['xlsx'])
+    inv_data = pd.read_excel(ex).to_string() if ex else "No hi ha inventari disponible."
+    
+    # Preus originals
     c_visita = st.number_input("Preu Visita (€)", value=60.0)
     c_hora = st.number_input("Preu Hora (€)", value=45.0)
+    
     es_urgent = st.toggle("🚨 Urgència 24h", value=False)
+    p_final_visita = c_visita * 1.5 if es_urgent else c_visita
 
-# --- 4. INTERFÍCIE ---
+# --- 4. COS DE L'APP ---
 st.subheader("📸 Nova Inspecció")
-col_a, col_b = st.columns([2,1])
+with st.expander("🔦 CONSELLS DE GRAVACIÓ"):
+    st.write("Usa flaix, grava detalls i explica l'avaria en veu alta.")
 
+col_a, col_b = st.columns([2,1])
 with col_a:
-    notas = st.text_area("Informació tècnica", placeholder="Descriu l'avaria...")
-    archivo = st.file_uploader("Pujar evidència", type=['mp4', 'mov', 'jpg', 'png', 'jpeg'])
+    notas = st.text_area("Informació tècnica", placeholder="Escriu aquí o descriu l'avaria...")
+    archivo = st.file_uploader("Subir vídeo o foto", type=['mp4', 'mov', 'jpg', 'png', 'jpeg'])
 
 with col_b:
     st.info("📍 Carrer de la Riera, Mataró")
-    if es_urgent: st.error("TARIFA D'URGÈNCIA")
+    if es_urgent: st.error("TARIFA D'URGÈNCIA ACTIVA")
 
-# --- 5. LÒGICA D'EXECUCIÓ ---
+# --- 5. EXECUCIÓ ---
 if archivo:
-    if st.button("🚀 EXECUTAR ANÀLISI"):
-        with st.status("🛠️ Analitzant..."):
+    if st.button("🚀 EXECUTAR ANÀLISI COMPLETA"):
+        with st.status("🚀 Processant..."):
             try:
                 suffix = os.path.splitext(archivo.name)[1]
                 with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tfile:
@@ -63,22 +69,19 @@ if archivo:
                     time.sleep(2)
                     file_uploaded = genai.get_file(file_uploaded.name)
 
-                # Cridem al motor de prompts
-                prompt = obtener_prompt_ingenieria("Mataró", es_urgent, notas, "Inventari buit", c_visita, c_hora)
+                # Connectem amb el bloc de prompts
+                prompt = obtener_prompt_ingenieria("Mataró", es_urgent, notas, inv_data, p_final_visita, c_hora)
                 
                 model = genai.GenerativeModel(model_name=model_triat)
                 res = model.generate_content([prompt, file_uploaded])
                 
                 if res.text:
                     st.markdown("---")
-                    caixa_analisi("Informe d'Enginyeria", "🔍", res.text)
+                    caixa_analisi("Diagnòstic d'Enginyeria", "🔍", res.text)
                     
-                    # Generem el PDF
-                    pdf_bytes = crear_pdf_professional(res.text, usuari_actual)
-                    st.download_button("📥 Baixar PDF", data=pdf_bytes, file_name="informe.pdf")
-                    
-                    # Intentem guardar a l'històric
-                    guardar_inspeccio_gsheets(usuari_actual, "Avaria", 100.0)
+                    # Generació del PDF professional
+                    pdf_bytes = crear_pdf_professional(res.text, st.session_state.get('user', 'Admin'))
+                    st.download_button("📥 Baixar Informe PDF", data=pdf_bytes, file_name="informe_v3.pdf")
 
                 os.unlink(temp_path)
             except Exception as e:
