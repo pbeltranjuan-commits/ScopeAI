@@ -6,21 +6,19 @@ import time
 import os
 import tempfile
 
-# --- IMPORTACIONS ---
+# --- 1. IMPORTACIONS DE ELS TEUS BLOCS DE NOTES ---
 from usuarios import gestionar_sesion, verificar_cuota, registrar_uso_gratis
 from pagos import mostrar_pago
 from ingenieria import obtener_manual_formulas
-# AFEGIM LA CONNEXIÓ AMB ELS ESTILS
 from estils import aplicar_estils_personalitzats, caixa_analisi
+from prompts import obtener_prompt_ingenieria  # <--- EL NOU FITXER!
 
-# CONFIGURACIÓ
+# --- 2. CONFIGURACIÓ I ESTILS ---
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 st.set_page_config(page_title="ScopeAI Ultimate", layout="wide", page_icon="💎")
-
-# CRIDEM ELS ESTILS PER PINTAR LA WEB
 aplicar_estils_personalitzats()
 
-# LOGIN
+# --- 3. GESTIÓ D'USUARI ---
 gestionar_sesion()
 
 if 'history' not in st.session_state:
@@ -28,7 +26,7 @@ if 'history' not in st.session_state:
 
 st.title("🏗️ ScopeAI Enterprise")
 
-# SIDEBAR ORIGINAL COMPLET
+# --- 4. SIDEBAR (Configuració Tècnica) ---
 with st.sidebar:
     st.header("⚙️ Panell de Control")
     st.write(f"👤 Usuari: **{st.session_state.user}**")
@@ -54,7 +52,7 @@ with st.sidebar:
     es_urgent = st.toggle("🚨 Urgència 24h", value=False)
     p_final_visita = c_visita * 1.5 if es_urgent else c_visita
 
-# DASHBOARD DE MÈTRIQUES
+# --- 5. DASHBOARD ---
 if st.session_state.history:
     st.markdown("### 📊 Resum d'Activitat")
     c1, c2, c3 = st.columns(3)
@@ -63,7 +61,7 @@ if st.session_state.history:
     c3.metric("Estat Flota", "🟢 Operativa")
     st.markdown("---")
 
-# INTERFÍCIE D'INSPECCIÓ
+# --- 6. INTERFÍCIE D'INSPECCIÓ ---
 st.subheader("📸 Nova Inspecció")
 with st.expander("🔦 CONSELLS DE GRAVACIÓ"):
     st.write("Usa flaix, grava detalls i explica l'avaria en veu alta.")
@@ -77,7 +75,7 @@ with col_b:
     if es_urgent: st.error("TARIFA D'URGÈNCIA ACTIVA")
     st.info(f"📍 {loc_actual}")
 
-# BOTÓ D'EXECUTAR AMB BLOQUEIG REAL
+# --- 7. BOTÓ D'EXECUTAR AMB LÒGICA DE NEGOCI ---
 if archivo:
     if st.button("🚀 EJECUTAR ANÀLISI COMPLETA"):
         pot_anar_gratis = verificar_cuota()
@@ -89,7 +87,6 @@ if archivo:
                 st.warning("🔒 Límite diario alcanzado. Por favor, confirma el pago de 1€.")
                 st.stop()
 
-        # Si arriba aquí, s'executa
         with st.status("🚀 Processant anàlisi d'enginyeria..."):
             try:
                 suffix = os.path.splitext(archivo.name)[1]
@@ -102,28 +99,15 @@ if archivo:
                     time.sleep(2)
                     file_uploaded = genai.get_file(file_uploaded.name)
 
-                formulas = obtener_manual_formulas()
-                model = genai.GenerativeModel(model_name=model_triat)
+                # --- AQUÍ CRIDEM EL NOU PROMPT DEL BLOC DE NOTES ---
+                prompt = obtener_prompt_ingenieria(loc_actual, es_urgent, notas, inv_data, p_final_visita, c_hora)
                 
-                prompt = f"""
-                ERES INGENIERO SENIOR. USA ESTAS FÓRMULAS: {formulas}
-                DATOS: {loc_actual}, Urgencia: {es_urgent}, Notas: {notas}
-                INVENTARIO: {inv_data}
-                PRECIOS: Visita {p_final_visita}€, Mano de obra {c_hora}€/h.
-
-                INSTRUCCIONES:
-                1. IA Safety Scan obligatori.
-                2. Diagnóstico y materiales.
-                3. BUSCA EN 5 WEBS (Amazon Business, RS Components, ManoMano, Bauhaus, Distribuidores).
-                4. Presupuesto final con IVA 21%.
-                5. Responde en CATALÀ.
-                """
-
+                model = genai.GenerativeModel(model_name=model_triat)
                 res = model.generate_content([prompt, file_uploaded])
                 
                 if res.text:
                     st.markdown("---")
-                    # FEM SERVIR LA CAIXA D'ANÀLISI CURRADA PER AL RESULTAT
+                    # RESULTAT AMB LA TARGETA BONICA
                     caixa_analisi("Diagnòstic d'Enginyeria", "🔍", res.text)
                     
                     # Generar PDF
