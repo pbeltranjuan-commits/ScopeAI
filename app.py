@@ -12,33 +12,38 @@ from ingenieria import obtener_manual_formulas
 from estils import aplicar_estils_personalitzats, caixa_analisi
 from prompts import obtener_prompt_ingenieria
 from generador_pdf import crear_pdf_professional
+
+# Blocs modulars visuals
 from dashboard import mostrar_dashboard_premium
 from cercador_web import cercar_preus_reals, mostrar_targeta_preu
 from analitzador_financier import mostrar_targeta_financiera
 from notificador import sidebar_notificacions
 
-# --- NOU SQL: Importem les funcions de la teva base de dades eterna ---
+# --- NOU: PERSISTÈNCIA SQL ---
 from base_dades import guardar_inspeccio_sql, carregar_historial_sql
 
 # --- 2. CONFIGURACIÓ DE L'API I PÀGINA ---
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 st.set_page_config(page_title="ScopeAI Ultimate", layout="wide", page_icon="💎")
 
+# Activem el disseny Premium
 aplicar_estils_personalitzats()
+
+# LOGIN OBLIGATORI
 gestionar_sesion()
 
 st.title("🏗️ ScopeAI Enterprise")
 
-# --- 3. PERSISTÈNCIA ETERNA (SQL) ---
-# Canviem la càrrega local per la càrrega de la base de dades SQL
+# --- 3. PERSISTÈNCIA DE DADES (Recuperem de SQL) ---
+user_actual = st.session_state.get('user', 'pol123')
 if 'history' not in st.session_state:
-    user_actual = st.session_state.get('user', 'pol123')
+    # Ara l'historial ve de Supabase, no es perd mai!
     st.session_state.history = carregar_historial_sql(user_actual)
 
-# --- 4. CONFIGURACIÓ SIDEBAR ---
+# --- 4. CONFIGURACIÓ SIDEBAR (Recuperat 100%) ---
 with st.sidebar:
     st.header("⚙️ Panell de Control")
-    st.write(f"👤 Usuari: **{st.session_state.get('user', 'pol123')}**")
+    st.write(f"👤 Usuari: **{user_actual}**")
     
     try:
         models_disponibles = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
@@ -57,19 +62,24 @@ with st.sidebar:
     st.markdown("---")
     incloure_gps = st.checkbox("Capturar GPS", value=True)
     loc_actual = "📍 Carrer de la Riera, Mataró" if incloure_gps else "Ubicació Manual"
+    st.caption(f"Localització: {loc_actual}")
     
     es_urgent = st.toggle("🚨 Urgència 24h", value=False)
     p_final_visita = c_visita * 1.5 if es_urgent else c_visita
 
+    # BLOC NOTIFICACIONS
     sidebar_notificacions()
 
-# --- 5. DASHBOARD ---
+# --- 5. DASHBOARD (Carregat des de SQL) ---
 if st.session_state.history:
     mostrar_dashboard_premium(st.session_state.history)
     st.markdown("---")
 
-# --- 6. ENTRADA DE DADES ---
+# --- 6. ENTRADA DE DADES (Recuperat Completa) ---
 st.subheader("📸 Nova Inspecció")
+with st.expander("🔦 AJUDA PER A LA GRAVACIÓ"):
+    st.write("1. Flaix actiu. 2. Perspectiva de lluny a prop. 3. Descriu l'avaria parlant.")
+
 col_in, col_alert = st.columns([2, 1])
 with col_in:
     notas = st.text_area("Informació tècnica", placeholder="Escriu o descriu l'avaria...")
@@ -77,12 +87,14 @@ with col_in:
 
 with col_alert:
     if es_urgent: st.error("TARIFA D'URGÈNCIA ACTIVA")
+    st.info(f"Model actiu: {model_triat.split('/')[-1]}")
+    
     if notas:
         st.markdown("🔍 **Cerca de mercat:**")
         dades_mercat = cercar_preus_reals(notas[:15])
         mostrar_targeta_preu(dades_mercat)
 
-# --- 7. LÒGICA DE L'ANÀLISI ---
+# --- 7. LÒGICA DE L'ANÀLISI (Recuperada línia a línia) ---
 if archivo:
     if st.button("🚀 EXECUTAR ANÀLISI COMPLETA"):
         pot_anar_gratis = verificar_cuota()
@@ -94,6 +106,7 @@ if archivo:
 
         with st.status(f"🔍 Analitzant amb {model_triat}..."):
             try:
+                # Gestió de fitxer temporal per a Gemini
                 suffix = os.path.splitext(archivo.name)[1]
                 with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tfile:
                     tfile.write(archivo.read())
@@ -104,29 +117,31 @@ if archivo:
                     time.sleep(2)
                     file_uploaded = genai.get_file(file_uploaded.name)
 
+                # Generar prompt amb mòdul d'enginyeria
                 prompt = obtener_prompt_ingenieria(loc_actual, es_urgent, notas, inv_data, p_final_visita, c_hora)
+                
                 model = genai.GenerativeModel(model_name=model_triat)
                 respuesta = model.generate_content([prompt, file_uploaded])
                 
                 if respuesta.text:
                     st.markdown("---")
                     caixa_analisi("Diagnòstic Oficial ScopeAI", "🔍", respuesta.text)
+                    
+                    # ROI Financer
                     mostrar_targeta_financiera(150.0)
 
-                    # --- NOU SQL: GUARDAR A LA BASE DE DADES ETERNA ---
-                    user_actual = st.session_state.get('user', 'pol123')
-                    tipus_avaria = "Mecànica" if "motor" in notas.lower() else "Elèctrica"
+                    # --- GUARDAR A SQL (Sustitueix el guardat local i Sheets) ---
+                    tipus_detectat = "Mecànica" if "motor" in notas.lower() else "Elèctrica"
+                    guardar_inspeccio_sql(user_actual, tipus_detectat, 150.0)
                     
-                    # Guardem físicament al SQL de Supabase
-                    guardar_inspeccio_sql(user_actual, tipus_avaria, 150.0)
-                    
-                    # Recarreguem l'historial del SQL per actualitzar el Dashboard
+                    # Recarreguem de SQL per actualitzar Dashboard immediatament
                     st.session_state.history = carregar_historial_sql(user_actual)
 
-                    # PDF i descàrrega
+                    # Generació de PDF
                     pdf_bytes = crear_pdf_professional(respuesta.text, user_actual)
+                    
                     st.download_button(
-                        label="📥 Baixar Informe PDF",
+                        label="📥 Baixar Informe PDF Professional",
                         data=pdf_bytes,
                         file_name=f"Informe_{user_actual}.pdf",
                         mime="application/pdf"
@@ -134,7 +149,7 @@ if archivo:
 
                     if pot_anar_gratis:
                         registrar_uso_gratis()
-                        st.success("Anàlisi guardada correctament al núvol (SQL).")
+                        st.success("Anàlisi finalitzada i desada a la base de dades SQL.")
                         time.sleep(1)
                         st.rerun()
 
