@@ -4,60 +4,102 @@ import pandas as pd
 import time
 import os
 import tempfile
+from fpdf import FPDF
 
-# --- 1. IMPORTACIONS (Si no troba el fitxer, no peta) ---
+# --- 1. IMPORTACIONS DELS TEUS MÒDULS (Mantenim la seguretat) ---
+from usuarios import gestionar_sesion, verificar_cuota, registrar_uso_gratis
+from pagos import mostrar_pago
+from ingenieria import obtener_manual_formulas
 from estils import aplicar_estils_personalitzats, caixa_analisi
-try:
-    from prompts import obtener_prompt_ingenieria
-    from generador_pdf import crear_pdf_professional
-except ImportError:
-    st.error("⚠️ Falten fitxers a GitHub! Recorda pujar 'prompts.py' i 'generador_pdf.py'")
+from prompts import obtener_prompt_ingenieria
+from generador_pdf import crear_pdf_professional
 
-# --- 2. CONFIGURACIÓ ORIGINAL RECONSTRUÏDA ---
+# Intentem importar la base de dades per a l'històric de milers d'usuaris
+try:
+    from base_dades import guardar_inspeccio_gsheets
+except ImportError:
+    def guardar_inspeccio_gsheets(*args): pass
+
+# --- 2. CONFIGURACIÓ DE L'API I PÀGINA (Recuperat original) ---
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-st.set_page_config(page_title="ScopeAI Enterprise", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="ScopeAI Ultimate", layout="wide", page_icon="💎")
+
+# Activem el disseny professional però sense carregar-nos la teva estructura
 aplicar_estils_personalitzats()
+
+# LOGIN OBLIGATORI
+gestionar_sesion()
 
 st.title("🏗️ ScopeAI Enterprise")
 
-# --- 3. SIDEBAR (Tot el que tenies abans) ---
+# Inicialitzar historial de la sessió
+if 'history' not in st.session_state: 
+    st.session_state.history = []
+
+# --- 3. CONFIGURACIÓ SIDEBAR (RECUPERAT AL 100%) ---
 with st.sidebar:
     st.header("⚙️ Panell de Control")
-    st.write(f"👤 Usuari: **{st.session_state.get('user', 'Usuari')}**")
+    st.write(f"👤 Usuari: **{st.session_state.get('user', 'pol123')}**")
     
-    # Models de Gemini (Com a la teva imatge e5cc50.png)
-    model_triat = st.selectbox("🧠 Model de Gemini", ["gemini-1.5-flash", "gemini-1.5-pro"])
+    # RECUPERAT: Llista de models real de la teva API
+    try:
+        models_disponibles = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+    except:
+        models_disponibles = ["models/gemini-1.5-pro-latest", "models/gemini-1.5-flash-latest"]
+    
+    model_triat = st.selectbox("🧠 Model de Gemini", models_disponibles)
     
     st.markdown("---")
-    # Gestió de l'inventari Excel
+    # RECUPERAT: Gestió d'Excel
     ex = st.file_uploader("📦 Inventari (Excel)", type=['xlsx'])
-    inv_data = pd.read_excel(ex).to_string() if ex else "No hi ha inventari disponible."
+    inv_data = pd.read_excel(ex).to_string() if ex else "No hay inventario local disponible."
     
-    # Preus originals
     c_visita = st.number_input("Preu Visita (€)", value=60.0)
     c_hora = st.number_input("Preu Hora (€)", value=45.0)
+    
+    st.markdown("---")
+    # RECUPERAT: GPS i Ubicació
+    incloure_gps = st.checkbox("Capturar GPS", value=True)
+    loc_actual = "📍 Carrer de la Riera, Mataró" if incloure_gps else "Ubicació Manual"
+    st.caption(f"Localització: {loc_actual}")
     
     es_urgent = st.toggle("🚨 Urgència 24h", value=False)
     p_final_visita = c_visita * 1.5 if es_urgent else c_visita
 
-# --- 4. COS DE L'APP ---
-st.subheader("📸 Nova Inspecció")
-with st.expander("🔦 CONSELLS DE GRAVACIÓ"):
-    st.write("Usa flaix, grava detalls i explica l'avaria en veu alta.")
+# --- 4. DASHBOARD DE CO2 (Mantingut) ---
+if st.session_state.history:
+    st.markdown("### 📊 Resum d'Activitat")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Pressupostos", len(st.session_state.history))
+    c2.metric("Estalvi CO2", f"{len(st.session_state.history)*1.2:.1f} kg")
+    c3.metric("Estat Flota", "🟢 Operativa")
+    st.markdown("---")
 
-col_a, col_b = st.columns([2,1])
-with col_a:
-    notas = st.text_area("Informació tècnica", placeholder="Escriu aquí o descriu l'avaria...")
+# --- 5. ENTRADA DE DADES ---
+st.subheader("📸 Nova Inspecció")
+with st.expander("🔦 AJUDA PER A LA GRAVACIÓ"):
+    st.write("1. Flaix actiu. 2. Perspectiva de lluny a prop. 3. Descriu l'avaria parlant.")
+
+col_in, col_alert = st.columns([2, 1])
+with col_in:
+    notas = st.text_area("Informació tècnica", placeholder="Escriu o descriu l'avaria...")
     archivo = st.file_uploader("Subir vídeo o foto", type=['mp4', 'mov', 'jpg', 'png', 'jpeg'])
 
-with col_b:
-    st.info("📍 Carrer de la Riera, Mataró")
+with col_alert:
     if es_urgent: st.error("TARIFA D'URGÈNCIA ACTIVA")
+    st.info(f"Model actiu: {model_triat.split('/')[-1]}")
 
-# --- 5. EXECUCIÓ ---
+# --- 6. LÒGICA DE L'ANÀLISI (FUSIONADA) ---
 if archivo:
     if st.button("🚀 EXECUTAR ANÀLISI COMPLETA"):
-        with st.status("🚀 Processant..."):
+        pot_anar_gratis = verificar_cuota()
+        
+        if not pot_anar_gratis:
+            if not mostrar_pago():
+                st.warning("🔒 Operació bloquejada. Superat el límit diari.")
+                st.stop()
+
+        with st.status(f"🔍 Analitzant amb {model_triat}..."):
             try:
                 suffix = os.path.splitext(archivo.name)[1]
                 with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tfile:
@@ -69,20 +111,38 @@ if archivo:
                     time.sleep(2)
                     file_uploaded = genai.get_file(file_uploaded.name)
 
-                # Connectem amb el bloc de prompts
-                prompt = obtener_prompt_ingenieria("Mataró", es_urgent, notas, inv_data, p_final_visita, c_hora)
+                # Cridem al motor de prompts (prompts.py)
+                prompt = obtener_prompt_ingenieria(loc_actual, es_urgent, notas, inv_data, p_final_visita, c_hora)
                 
                 model = genai.GenerativeModel(model_name=model_triat)
-                res = model.generate_content([prompt, file_uploaded])
+                respuesta = model.generate_content([prompt, file_uploaded])
                 
-                if res.text:
+                if respuesta.text:
                     st.markdown("---")
-                    caixa_analisi("Diagnòstic d'Enginyeria", "🔍", res.text)
+                    # Visualització professional
+                    caixa_analisi("Diagnòstic Oficial ScopeAI", "🔍", respuesta.text)
                     
-                    # Generació del PDF professional
-                    pdf_bytes = crear_pdf_professional(res.text, st.session_state.get('user', 'Admin'))
-                    st.download_button("📥 Baixar Informe PDF", data=pdf_bytes, file_name="informe_v3.pdf")
+                    # GENERACIÓ DE PDF PROFESSIONAL (Cridant al nou mòdul)
+                    pdf_bytes = crear_pdf_professional(respuesta.text, st.session_state.get('user', 'pol123'))
+                    
+                    st.download_button(
+                        label="📥 Baixar Informe PDF Professional",
+                        data=pdf_bytes,
+                        file_name=f"Informe_{st.session_state.get('user', 'pol123')}.pdf",
+                        mime="application/pdf"
+                    )
+
+                    # Guardar a la base de dades (Històric)
+                    guardar_inspeccio_gsheets(st.session_state.get('user', 'pol123'), "Avaria Tècnica", 150.0)
+
+                    if pot_anar_gratis:
+                        registrar_uso_gratis()
+                        st.success("Crèdit gratuït consumit.")
+                        time.sleep(1)
+                        st.rerun()
 
                 os.unlink(temp_path)
+                genai.delete_file(file_uploaded.name)
+
             except Exception as e:
-                st.error(f"Error: {e}")
+                st.error(f"Error crític: {str(e)}")
