@@ -4,16 +4,16 @@ import pandas as pd
 import time
 import os
 import tempfile
-from fpdf import FPDF
 
-# --- 1. IMPORTACIONS DELS TEUS MÒDULS ---
+# --- 1. IMPORTACIONS DELS TEUS MÒDULS MODULARS ---
 from usuarios import gestionar_sesion, verificar_cuota, registrar_uso_gratis
 from pagos import mostrar_pago
 from ingenieria import obtener_manual_formulas
 from estils import aplicar_estils_personalitzats, caixa_analisi
 from prompts import obtener_prompt_ingenieria
 from generador_pdf import crear_pdf_professional
-from dashboard import mostrar_dashboard_premium  # <--- NOU BLOC
+from dashboard import mostrar_dashboard_premium
+from cercador_web import cercar_preus_reals, mostrar_targeta_preu
 
 # Intentem importar la base de dades
 try:
@@ -33,7 +33,7 @@ gestionar_sesion()
 
 st.title("🏗️ ScopeAI Enterprise")
 
-# Inicialitzar historial de la sessió
+# Inicialitzar historial de la sessió si no existeix
 if 'history' not in st.session_state: 
     st.session_state.history = []
 
@@ -64,7 +64,7 @@ with st.sidebar:
     es_urgent = st.toggle("🚨 Urgència 24h", value=False)
     p_final_visita = c_visita * 1.5 if es_urgent else c_visita
 
-# --- 4. DASHBOARD MODULAR PREMIUM (Substitueix l'antic) ---
+# --- 4. DASHBOARD MODULAR (S'actualitza sol amb l'historial) ---
 if st.session_state.history:
     mostrar_dashboard_premium(st.session_state.history)
     st.markdown("---")
@@ -82,6 +82,12 @@ with col_in:
 with col_alert:
     if es_urgent: st.error("TARIFA D'URGÈNCIA ACTIVA")
     st.info(f"Model actiu: {model_triat.split('/')[-1]}")
+    
+    # MOSTRAR RECANVI SI HI HA TEXT (Cercador Web)
+    if notas:
+        st.markdown("🔍 **Cerca de mercat:**")
+        dades_mercat = cercar_preus_reals(notas[:15])
+        mostrar_targeta_preu(dades_mercat)
 
 # --- 6. LÒGICA DE L'ANÀLISI ---
 if archivo:
@@ -105,6 +111,7 @@ if archivo:
                     time.sleep(2)
                     file_uploaded = genai.get_file(file_uploaded.name)
 
+                # Prompt d'enginyeria
                 prompt = obtener_prompt_ingenieria(loc_actual, es_urgent, notas, inv_data, p_final_visita, c_hora)
                 
                 model = genai.GenerativeModel(model_name=model_triat)
@@ -114,13 +121,14 @@ if archivo:
                     st.markdown("---")
                     caixa_analisi("Diagnòstic Oficial ScopeAI", "🔍", respuesta.text)
                     
-                    # GUARDEM A L'HISTORIAL PER AL DASHBOARD
+                    # ACTUALITZAR HISTORIAL PER AL DASHBOARD
                     st.session_state.history.append({
                         "Hora": time.strftime("%H:%M"), 
                         "Data": time.strftime("%d/%m/%Y"),
-                        "Tipus": "Inspecció Tècnica"
+                        "Tipus": "Elèctrica" if "elèctric" in notas.lower() else "Mecànica"
                     })
 
+                    # GENERAR PDF
                     pdf_bytes = crear_pdf_professional(respuesta.text, st.session_state.get('user', 'pol123'))
                     
                     st.download_button(
@@ -130,11 +138,12 @@ if archivo:
                         mime="application/pdf"
                     )
 
-                    guardar_inspeccio_gsheets(st.session_state.get('user', 'pol123'), "Avaria Tècnica", 150.0)
+                    # Guardar a Google Sheets
+                    guardar_inspeccio_gsheets(st.session_state.get('user', 'pol123'), "Inspecció ScopeAI", 150.0)
 
                     if pot_anar_gratis:
                         registrar_uso_gratis()
-                        st.success("Crèdit gratuït consumit.")
+                        st.success("Crèdit consumit correctament.")
                         time.sleep(1)
                         st.rerun()
 
