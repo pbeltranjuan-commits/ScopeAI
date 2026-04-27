@@ -3,71 +3,67 @@ import streamlit as st
 def aplicar_estils_personalitzats():
     st.markdown("""
         <style>
-        /* FONTS I FONS GENERAL */
-        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
+        /* 1. FONTS I FONS GENERAL (Claredat total) */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
         
         .stApp {
-            background-color: #0f172a;
-            color: #f8fafc;
-            font-family: 'Roboto', sans-serif;
+            background-color: #F8FAFC !important; /* Gris molt clar, gairebé blanc */
+            color: #1E293B !important; /* Text gris fosc, no negre pur */
+            font-family: 'Inter', sans-serif !important;
         }
 
-        /* SIDEBAR PROFESSIONAL */
+        /* 2. SIDEBAR PROFESSIONAL (Blau Marí Corporatiu) */
         [data-testid="stSidebar"] {
-            background-color: #1e293b !important;
-            border-right: 1px solid #334155;
+            background-color: #0F172A !important; /* Blau molt fosc elegant */
+            border-right: 1px solid #E2E8F0;
         }
         
-        /* TEXTOS DE LA SIDEBAR (Arreglar el lila que no es llegeix) */
         [data-testid="stSidebar"] .stMarkdown p, 
-        [data-testid="stSidebar"] label,
-        [data-testid="stSidebar"] span {
-            color: #e2e8f0 !important;
-            font-weight: 500 !important;
-            font-size: 15px !important;
+        [data-testid="stSidebar"] label {
+            color: #F8FAFC !important; /* Text blanc a la sidebar */
+            font-weight: 500;
         }
 
-        /* TITOLS */
+        /* 3. TÍTOLS */
         h1, h2, h3 {
-            color: #38bdf8 !important;
+            color: #0F172A !important;
             font-weight: 700 !important;
+            letter-spacing: -0.5px;
         }
 
-        /* BOTONS PROFESSIONALS */
+        /* 4. BOTONS D'ACCIO (Estil SaaS modern) */
         div.stButton > button {
-            background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%) !important;
+            background-color: #2563EB !important; /* Blau elèctric professional */
             color: white !important;
+            border-radius: 6px !important;
             border: none !important;
-            padding: 10px 20px !important;
-            border-radius: 8px !important;
+            padding: 0.6rem 1.5rem !important;
             font-weight: 600 !important;
-            transition: all 0.3s ease !important;
+            transition: background 0.2s ease;
             width: 100%;
-            text-transform: uppercase;
-            letter-spacing: 1px;
         }
 
         div.stButton > button:hover {
-            background: #0ea5e9 !important;
-            box-shadow: 0 0 15px rgba(56, 189, 248, 0.4) !important;
-            transform: translateY(-1px);
+            background-color: #1D4ED8 !important;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
         }
 
-        /* CAIXES DE TEXT I INPUTS */
-        input, textarea, .stNumberInput div {
-            background-color: #1e293b !important;
-            color: white !important;
-            border: 1px solid #475569 !important;
-            border-radius: 8px !important;
-        }
-
-        /* TARGETA DE RESULTATS (L'informe que surt) */
+        /* 5. TARGETA DE RESULTATS (L'Informe) */
         .report-card {
-            background-color: #1e293b;
-            padding: 25px;
-            border-radius: 12px;
-            border: 1px solid #38bdf8;
+            background-color: #FFFFFF !important;
+            padding: 30px !important;
+            border-radius: 12px !important;
+            border: 1px solid #E2E8F0 !important;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
             margin-top: 20px;
+        }
+
+        /* 6. INPUTS (Més nets) */
+        .stTextArea textarea, .stNumberInput input {
+            background-color: white !important;
+            border: 1px solid #CBD5E1 !important;
+            border-radius: 8px !important;
+            color: #1E293B !important;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -75,8 +71,8 @@ def aplicar_estils_personalitzats():
 def caixa_analisi(titol, icona, contingut):
     st.markdown(f"""
         <div class="report-card">
-            <h2 style="margin-top:0; color:#38bdf8;">{icona} {titol}</h2>
-            <div style="color:#f1f5f9; font-size:16px; line-height:1.6;">
+            <h3 style="margin-top:0; color:#2563EB;">{icona} {titol}</h3>
+            <div style="color:#334155; font-size:16px; line-height:1.6;">
                 {contingut}
             </div>
         </div>
