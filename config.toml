@@ -1,6 +1,8 @@
-[theme]
-primaryColor = "#18181B"
-backgroundColor = "#F7F9FC"
-secondaryBackgroundColor = "#09090B"
-textColor = "#18181B"
-font = "sans serif"
+[connections.postgresql]
+dialect = "postgresql"
+url = "postgresql://postgres.snsgnzaguptvfpajnklp:5aHdtXJDJuAVLPl1@aws-0-eu-west-1.pooler.supabase.com:6543/postgres?pgbouncer=true"
+host = "aws-0-eu-west-1.pooler.supabase.com"
+database = "postgres"
+username = "postgres.snsgnzaguptvfpajnklp"
+password = "5aHdtXJDJuAVLPl1"
+port = 6543
