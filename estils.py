@@ -3,35 +3,50 @@ import streamlit as st
 def aplicar_estils_personalitzats():
     st.markdown("""
         <style>
-        /* Fons global més suau */
+        /* FORÇAR COLOR DE FONS */
         .stApp {
-            background-color: #f8fafc;
+            background-color: #f1f5f9 !important;
         }
 
-        /* Sidebar: anem a lo segur, només el color de fons */
+        /* FORÇAR SIDEBAR FOSCA */
         [data-testid="stSidebar"] {
             background-color: #0f172a !important;
         }
-        
-        /* Arreglar el color dels textos de la Sidebar per llegir-los bé */
-        [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2 {
-            color: #f8fafc !important;
+
+        /* TÍTOL PRINCIPAL EN BLAU CORPORATIU */
+        h1 {
+            color: #1e3a8a !important;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
         }
 
-        /* Targeta de resultats neta i sense errors de superposició */
+        /* BOTÓ DE L'APP - EL FEM BLAU I GRAN */
+        div.stButton > button:first-child {
+            background-color: #2563eb !important;
+            color: white !important;
+            border-radius: 10px !important;
+            border: none !important;
+            height: 50px !important;
+            width: 100% !important;
+            font-size: 18px !important;
+            font-weight: bold !important;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
+        }
+
+        /* CAIXA D'INFORMACIÓ TÈCNICA */
+        .stTextArea textarea {
+            border-radius: 10px !important;
+            border: 1px solid #cbd5e1 !important;
+        }
+
+        /* TARGETA DE RESULTATS (La que veurem quan l'IA acabi) */
         .report-card {
-            background-color: white;
-            padding: 1.5rem;
-            border-radius: 12px;
-            border: 1px solid #e2e8f0;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-            margin-top: 20px;
-            color: #1e293b;
-        }
-
-        .report-card h3 {
-            color: #2563eb !important;
-            margin-bottom: 10px;
+            background-color: white !important;
+            padding: 25px !important;
+            border-radius: 15px !important;
+            border-left: 8px solid #2563eb !important;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1) !important;
+            color: #1e293b !important;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -39,7 +54,7 @@ def aplicar_estils_personalitzats():
 def caixa_analisi(titol, icona, contingut):
     st.markdown(f"""
         <div class="report-card">
-            <h3>{icona} {titol}</h3>
-            <div style="white-space: pre-wrap;">{contingut}</div>
+            <h2 style="color:#1e3a8a; margin-top:0;">{icona} {titol}</h2>
+            <div style="font-size: 16px; line-height: 1.6;">{contingut}</div>
         </div>
     """, unsafe_allow_html=True)
